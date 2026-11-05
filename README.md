@@ -100,7 +100,8 @@ What that means:
 - With only a few mailboxes it builds little reputation. Treat it mainly as an inbox-placement monitor.
 
 **Using an outside warm-up service.** For a stronger warm-up, connect the same mailboxes to a dedicated
-warm-up service that runs a large shared network. Then:
+warm-up service that runs a large shared network. See [Using an outside warm-up service](docs/ops/EXTERNAL_WARMUP.md) for the limits and sync behavior.
+Then:
 1. Turn this app's warm-up off for those mailboxes, so the two don't double up.
 2. Lower each mailbox's daily campaign limit here to leave room for the service's emails. This app doesn't
    see them, so it can't count them toward the provider's daily cap.
@@ -136,10 +137,10 @@ Product names mentioned in the docs are trademarks of their owners.
 | Campaigns | Unlimited steps, delays, A/B variants, `{{RANDOM \| Hi \| Hello}}` spintax, merge fields with fallbacks, schedules per timezone, account rotation |
 | Reliable sending | Postgres-backed queue: quotas reserved atomically, no duplicate sends, safe crash recovery, never sends outside your schedule |
 | Offline recovery | After downtime or laptop sleep, each mailbox re-syncs replies, bounces and unsubscribes **before** it may send again |
-| Leads | CSV import with mapping and dedupe, lists, custom fields, tags, suppression/blocklist, optional email verification |
-| Unified inbox | All mailboxes, threaded, reply classification, notes, reminders, rich-text replies |
-| CRM & analytics | Kanban pipeline, opportunities and revenue attributed to campaigns, dashboards, CSV export |
-| Automations | Event rules, signed webhooks, REST API with scoped keys, optional AI drafting with human approval |
+| Leads | CSV import with mapping and dedupe, lists, Apollo lead sources, lead capacity, customer and region exclusions, referrals, custom fields, tags, suppression/blocklist, optional email verification with MillionVerifier |
+| Unified inbox | All mailboxes, threaded, inbox triage, assignment and auto-forward, reply classification, notes, reminders, rich-text replies |
+| CRM & analytics | Kanban pipeline, HubSpot sync, opportunities and revenue attributed to campaigns, dashboards, CSV export |
+| Automations | Event rules, Slack alerts, escalation re-alerts, signed webhooks, REST API with scoped keys, optional AI drafting with human approval |
 | Security | 2FA, invites and roles, audit log, rate limits, CSP, GDPR export and erasure |
 
 Honesty rules built in: no fake engagement, no spoofed senders, no claims that warm-up guarantees inbox
@@ -190,7 +191,7 @@ runs without sending real email ([docs/ops/LOCAL.md](docs/ops/LOCAL.md)).
 
 Operations: backups, restore and upgrades ([docs/ops/LOCAL.md](docs/ops/LOCAL.md)), key rotation
 ([docs/ops/KEY_ROTATION.md](docs/ops/KEY_ROTATION.md)), recovering after downtime
-([docs/ops/OFFLINE_RECOVERY.md](docs/ops/OFFLINE_RECOVERY.md)).
+([docs/ops/OFFLINE_RECOVERY.md](docs/ops/OFFLINE_RECOVERY.md)); external warm-up ([docs/ops/EXTERNAL_WARMUP.md](docs/ops/EXTERNAL_WARMUP.md)).
 
 ### Documentation
 
@@ -198,6 +199,7 @@ Operations: backups, restore and upgrades ([docs/ops/LOCAL.md](docs/ops/LOCAL.md
 - [Implementation plan](docs/IMPLEMENTATION_PLAN.md) · [Progress](docs/PROGRESS.md) · [Decisions](docs/DECISIONS.md)
 - [Provider rules and limits (Gmail, Microsoft, SMTP)](docs/PROVIDER_COMPLIANCE.md)
 - [Stack and versions](docs/STACK.md)
+- [External warm-up service](docs/ops/EXTERNAL_WARMUP.md)
 
 ### Contributing
 

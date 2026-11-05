@@ -950,7 +950,7 @@
     "P8-T04"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "3dc6d2b",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -962,7 +962,7 @@
     "P9-T01"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "74bbc8f",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -974,7 +974,7 @@
     "P9-T02"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "de6f68e",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -986,7 +986,7 @@
     "P9-T03"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "caa6a43",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -998,7 +998,7 @@
     "P9-T04"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "4bd2eec",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1010,7 +1010,7 @@
     "P9-T05"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "89b38e8",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1022,7 +1022,7 @@
     "P9-T06"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "2c4faa3",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1034,7 +1034,7 @@
     "P9-T07"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "8debc42",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1046,7 +1046,7 @@
     "P9-T08"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "901dda3",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1058,7 +1058,7 @@
     "P9-T09"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "745ff01",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1070,7 +1070,7 @@
     "P9-T10"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "32dbaa8",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1082,7 +1082,7 @@
     "P9-T11"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "49a0e77",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
@@ -1094,14 +1094,14 @@
     "P9-T12"
    ],
    "model": "opencode-free",
-   "commit": null,
+   "commit": "d75bc41",
    "acceptance": "Tests for this feature pass; lint and typecheck clean"
   },
   {
    "id": "P9-T14",
    "phase": 9,
    "title": "Warmup docs and project records",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T13"
    ],
