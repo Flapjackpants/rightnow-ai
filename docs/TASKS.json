@@ -1077,7 +1077,7 @@
    "id": "P9-T12",
    "phase": 9,
    "title": "HubSpot core and job",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T11"
    ],

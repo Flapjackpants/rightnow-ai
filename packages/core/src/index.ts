@@ -81,6 +81,8 @@ export * from "./mail/tracking";
 export * from "./mail/stoprules";
 export * from "./mail/sync";
 export * from "./crm/stages";
+export * from "./crm/hubspot";
+export * from "./crm/hubspot-sync";
 export * from "./crm/opportunities";
 export * from "./crm/tasks";
 export * from "./crm/escalation";

@@ -59,6 +59,11 @@ model Workspace {
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
   aiConfigEnc          String? // encrypted AiConfig {baseUrl, apiKey, model, prices?, classifierEnabled} (D47)
   apolloConfigEnc      String?
+  crmSyncConfigEnc     String?
+  crmSyncLastRunAt     DateTime?
+  crmSyncLastError     String?
+  crmSyncLastErrorAt   DateTime?
+  crmCustomersPulledAt DateTime?
   // PS-CRM-12: false drops inbound replies from non-leads outside known threads (D48)
   storeNonLeadMail     Boolean               @default(true)
   verifierLastError    String? // short reason code of the last verifier failure, never a body or key
@@ -512,6 +517,7 @@ model Lead {
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @default(now()) @updatedAt
   deletedAt            DateTime?
+  crmSyncedAt          DateTime?
   listMembers          LeadListMember[]
   campaignLeads        CampaignLead[]
   opportunities        Opportunity[]
@@ -1286,6 +1292,7 @@ model Opportunity {
   accountId       String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  crmSyncedAt     DateTime?
 
   tasks           Task[]
 

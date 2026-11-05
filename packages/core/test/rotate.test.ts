@@ -48,6 +48,7 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "Webhook.urlEnc": 0,
     "Workspace.aiConfigEnc": 0,
     "Workspace.apolloConfigEnc": 0,
+    "Workspace.crmSyncConfigEnc": 0,
   });
   const acc = async (id: string) =>
     (await db.prisma.emailAccount.findUniqueOrThrow({ where: { id } })).credentialsEnc;
@@ -66,6 +67,7 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "Webhook.urlEnc": 0,
     "Workspace.aiConfigEnc": 0,
     "Workspace.apolloConfigEnc": 0,
+    "Workspace.crmSyncConfigEnc": 0,
   });
 
   // two rows back on A plus one under a third key: the column is left exactly as it was
