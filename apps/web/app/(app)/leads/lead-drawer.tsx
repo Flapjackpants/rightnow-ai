@@ -190,13 +190,19 @@ export function LeadDrawer({
   const [msg, setMsg] = useState("");
   const [error, setError] = useState("");
   const [timeline, setTimeline] = useState<TimelineItem[]>([]);
+  const [referredBy, setReferredBy] = useState<{ id: string; email: string } | null>(null);
 
   useEffect(() => {
     dialog.current?.showModal();
     void call(`/api/v1/leads/${lead.id}/timeline`, "GET").then((r) =>
       setTimeline((r.json.timeline as TimelineItem[] | undefined) ?? []),
     );
-  }, [lead.id]);
+    if (lead.referredById)
+      void call(`/api/v1/leads/${lead.id}`, "GET").then((r) => {
+        if (r.ok)
+          setReferredBy((r.json.referredBy as { id: string; email: string } | null) ?? null);
+      });
+  }, [lead.id, lead.referredById]);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -267,6 +273,7 @@ export function LeadDrawer({
               {stat("ESP", ESP[lead.espType] ?? "")}
               {stat("Emails sent", lead.emailsSent)}
               {stat("Replies", lead.replies)}
+              {referredBy && stat("Referred by", referredBy.email)}
             </dl>
             <form id="lead-form" onSubmit={save} className="grid gap-x-4 gap-y-3 sm:grid-cols-2">
               {FIELDS.map(([k, label]) => (

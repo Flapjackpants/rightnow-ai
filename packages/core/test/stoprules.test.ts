@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -202,6 +202,147 @@ const parse = async (raw: Buffer) => ({
 });
 
 describe("replies", () => {
+  test("fresh referral creates an unenrolled linked lead and repeated mail does not duplicate it", async () => {
+    const s = await setup();
+    const e = await enrol(s, "pat@acme.test");
+    await P().lead.update({
+      where: { id: e.lead.id },
+      data: {
+        companyName: "Acme",
+        lawfulBasis: "legitimate interest",
+        website: "https://acme.test",
+      },
+    });
+    const m = msg({
+      from: { email: e.lead.email },
+      inReplyTo: e.rfc,
+      text: "Please contact sam@acme.test",
+    });
+    await receive(s.accounts[0]!, m, REPLY("WRONG_PERSON"));
+    const referred = await P().lead.findFirstOrThrow({
+      where: { workspaceId: s.ws, email: "sam@acme.test" },
+    });
+    expect(referred).toMatchObject({
+      referredById: e.lead.id,
+      tags: ["referral"],
+      labels: [],
+      source: "referral",
+      companyName: "Acme",
+      lawfulBasis: "legitimate interest",
+      website: "https://acme.test",
+    });
+    expect(await P().campaignLead.count({ where: { leadId: referred.id } })).toBe(0);
+    expect(await cl(e.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
+    expect((await row(e.step2.id)).status).toBe("CANCELLED");
+    await receive(s.accounts[0]!, m, REPLY("WRONG_PERSON"));
+    expect(await P().lead.count({ where: { workspaceId: s.ws, email: "sam@acme.test" } })).toBe(1);
+  });
+
+  test("existing referral is linked without changing its other fields", async () => {
+    const s = await setup();
+    const e = await enrol(s, "pat@acme.test");
+    const existing = await P().lead.create({
+      data: { workspaceId: s.ws, email: "sam@acme.test", firstName: "Samuel", tags: ["keep"] },
+    });
+    await receive(
+      s.accounts[0]!,
+      msg({
+        from: { email: e.lead.email },
+        inReplyTo: e.rfc,
+        cc: [{ email: existing.email }],
+        text: "cc'ing my colleague",
+      }),
+      REPLY(),
+    );
+    expect(await lead(existing.id)).toMatchObject({
+      referredById: e.lead.id,
+      firstName: "Samuel",
+      tags: ["keep"],
+    });
+  });
+
+  test.each(["EMAIL", "DOMAIN"] as const)(
+    "%s suppression prevents referral creation",
+    async (kind) => {
+      const s = await setup();
+      const e = await enrol(s, "pat@acme.test");
+      const value = kind === "EMAIL" ? "sam@acme.test" : "acme.test";
+      await P().suppression.create({
+        data: {
+          workspaceId: s.ws,
+          kind,
+          value,
+          valueHash: createHash("sha256").update(value).digest("hex"),
+          reason: "MANUAL",
+        },
+      });
+      await receive(
+        s.accounts[0]!,
+        msg({
+          from: { email: e.lead.email },
+          inReplyTo: e.rfc,
+          text: "Please contact sam@acme.test",
+        }),
+        REPLY(),
+      );
+      expect(await P().lead.count({ where: { workspaceId: s.ws, email: "sam@acme.test" } })).toBe(
+        0,
+      );
+    },
+  );
+
+  test("wrong person without an address creates an assigned task", async () => {
+    const s = await setup();
+    const e = await enrol(s, "pat@acme.test");
+    await P().lead.update({ where: { id: e.lead.id }, data: { ownerId: "owner-1" } });
+    await receive(
+      s.accounts[0]!,
+      msg({ from: { email: e.lead.email }, inReplyTo: e.rfc, text: "Wrong person" }),
+      REPLY("WRONG_PERSON"),
+    );
+    expect(await P().task.findMany({ where: { leadId: e.lead.id } })).toMatchObject([
+      {
+        title: "Find the right contact for this referral",
+        assigneeId: "owner-1",
+        dueAt: at(DAY),
+        createdAt: T,
+      },
+    ]);
+  });
+  test("referral write failure leaves the reply, stops, and Events committed", async () => {
+    const s = await setup();
+    const e = await enrol(s, "pat@acme.test");
+    await P().$executeRawUnsafe(
+      `CREATE FUNCTION referral_test_fail() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.email = 'fail@acme.test' THEN RAISE EXCEPTION 'referral test failure'; END IF; RETURN NEW; END $$`,
+    );
+    await P().$executeRawUnsafe(
+      `CREATE TRIGGER referral_test_fail_before_insert BEFORE INSERT ON "Lead" FOR EACH ROW EXECUTE FUNCTION referral_test_fail()`,
+    );
+    try {
+      await receive(
+        s.accounts[0]!,
+        msg({
+          from: { email: e.lead.email },
+          inReplyTo: e.rfc,
+          text: "Please contact fail@acme.test",
+        }),
+        REPLY(),
+      );
+      expect(await cl(e.cl.id)).toMatchObject({ state: "STOPPED", stopReason: "REPLIED" });
+      expect((await row(e.step2.id)).status).toBe("CANCELLED");
+      expect(
+        (await events(s.ws)).some((event) => event.type === "REPLY" && event.leadId === e.lead.id),
+      ).toBe(true);
+      expect(
+        await P().auditLog.findFirst({
+          where: { workspaceId: s.ws, action: "referral.hook_failed", target: e.lead.id },
+        }),
+      ).toMatchObject({ meta: { code: expect.any(String) } });
+    } finally {
+      await P().$executeRawUnsafe(`DROP TRIGGER referral_test_fail_before_insert ON "Lead"`);
+      await P().$executeRawUnsafe(`DROP FUNCTION referral_test_fail()`);
+    }
+  });
   test("reply cancels pending follow-ups", async () => {
     const s = await setup();
     const e = await enrol(s, "ann@acme.test");
@@ -798,7 +939,13 @@ describe("against the send claim", () => {
     await receive(
       A,
       await parse(
-        dsn({ to: A.email, recipient: e.lead.email, status: "4.2.2", diag: "452 4.2.2 Mailbox full", orig: rfc }),
+        dsn({
+          to: A.email,
+          recipient: e.lead.email,
+          status: "4.2.2",
+          diag: "452 4.2.2 Mailbox full",
+          orig: rfc,
+        }),
       ),
     );
     expect(await row(e.step2.id)).toMatchObject({ status: "SENT" });

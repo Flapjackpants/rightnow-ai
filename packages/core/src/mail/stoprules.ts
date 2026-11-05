@@ -12,6 +12,7 @@ import { acceptTx, refOf } from "../sender";
 import { optOutTx } from "../unsubscribe";
 import { INTEREST_OF, stripQuoted, type Classification } from "./classify";
 import { recordEvent } from "./events";
+import { applyReferrals } from "./referral";
 import type { Match } from "./match";
 
 type Tx = Prisma.TransactionClient;
@@ -225,6 +226,13 @@ export async function applyInbound(
           leadId: lead.id,
           code,
         }),
+    );
+  if (c.kind === "REPLY" && fresh && lead)
+    await inSavepoint(
+      tx,
+      "referral",
+      () => applyReferrals(tx, clock, ws, m, lead, c.category),
+      (code) => audit(tx, { workspaceId: ws, at: now }, "referral.hook_failed", lead.id, { code }),
     );
 }
 

@@ -506,6 +506,9 @@ model Lead {
   lastSenderAccountId  String?
   lastEngagement       Json?
   mergedIntoId         String?
+  referredById         String?
+  referredBy           Lead?              @relation("LeadReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals            Lead[]             @relation("LeadReferral")
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @default(now()) @updatedAt
   deletedAt            DateTime?
@@ -519,6 +522,7 @@ model Lead {
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
   @@index([mergedIntoId])
+  @@index([referredById])
   // partial ("workspaceId", "updatedAt") WHERE verificationStatus = 'PENDING_JOB' for the verify job lives in the
   // verify_index migration (raw SQL)
 }
