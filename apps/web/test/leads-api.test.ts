@@ -20,6 +20,7 @@ let gdpr: typeof import("../app/api/v1/leads/[id]/gdpr-delete/route");
 let bulk: typeof import("../app/api/v1/leads/bulk/route");
 let merge: typeof import("../app/api/v1/leads/merge/route");
 let labels: typeof import("../app/api/v1/lead-labels/route");
+let capacity: typeof import("../app/api/v1/leads/capacity/route");
 
 const setRole = (role: string) =>
   db.prisma.member.updateMany({ where: { workspaceId }, data: { role } });
@@ -60,6 +61,7 @@ beforeAll(async () => {
   bulk = await import("../app/api/v1/leads/bulk/route");
   merge = await import("../app/api/v1/leads/merge/route");
   labels = await import("../app/api/v1/lead-labels/route");
+  capacity = await import("../app/api/v1/leads/capacity/route");
   ({ workspaceId } = await createFirstOwner(
     db.prisma,
     { name: "O", email: "owner@x.io", password: PASSWORD, workspaceName: "Acme", token: TOKEN },
@@ -84,6 +86,24 @@ afterAll(async () => {
 });
 
 describe("leads routes", () => {
+  it("allows a viewer to read capacity and enforces the API key scope", async () => {
+    await setRole("viewer");
+    const response = await capacity.GET(req("GET", "/api/v1/leads/capacity"));
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as Record<string, unknown>;
+    for (const field of ["dailySends", "followUpsDue", "newPerDay", "queued", "headroom"])
+      expect(typeof data[field]).toBe("number");
+    await setRole("owner");
+    const { createApiKey } = await import("@rightnow/core");
+    const key = (await createApiKey(db.prisma, workspaceId, "no leads", ["accounts:read"])).token;
+    expect(
+      (
+        await capacity.GET(
+          req("GET", "/api/v1/leads/capacity", undefined, { authorization: `Bearer ${key}` }),
+        )
+      ).status,
+    ).toBe(403);
+  });
   it("lists and reads only this workspace's leads", async () => {
     const j = (await (await list.GET(req("GET", "/api/v1/leads"))).json()) as {
       leads: { id: string }[];

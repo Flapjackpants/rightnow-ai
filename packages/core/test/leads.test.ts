@@ -253,6 +253,42 @@ describe("bulk", () => {
 });
 
 describe("merge", () => {
+  test("repoints referrals, avoids self-reference, and inherits a safe referrer", async () => {
+    const parent = await mk();
+    const keep = await mk();
+    const from = await mk();
+    const child = await mk();
+    await db.prisma.lead.update({ where: { id: from.id }, data: { referredById: parent.id } });
+    await db.prisma.lead.update({ where: { id: keep.id }, data: { referredById: from.id } });
+    await db.prisma.lead.update({ where: { id: child.id }, data: { referredById: from.id } });
+    await mergeLeads(db.prisma, clock, ws, { keepId: keep.id, mergeId: from.id });
+    expect((await db.prisma.lead.findUniqueOrThrow({ where: { id: keep.id } })).referredById).toBe(
+      parent.id,
+    );
+    expect((await db.prisma.lead.findUniqueOrThrow({ where: { id: child.id } })).referredById).toBe(
+      keep.id,
+    );
+    expect(await getLead(db.prisma, ws, child.id)).toMatchObject({
+      referredById: keep.id,
+      referredBy: { id: keep.id, email: keep.email },
+    });
+    await expect(getLead(db.prisma, other, child.id)).rejects.toMatchObject({ status: 404 });
+  });
+  test("merge never copies a referrer that would point at the kept lead", async () => {
+    const keep = await mk();
+    const from = await mk();
+    await db.prisma.lead.update({ where: { id: from.id }, data: { referredById: keep.id } });
+    await mergeLeads(db.prisma, clock, ws, { keepId: keep.id, mergeId: from.id });
+    expect((await getLead(db.prisma, ws, keep.id)).referredById).toBeNull();
+  });
+  test("getLead hides a referrer belonging to another workspace", async () => {
+    const foreign = await db.prisma.lead.create({
+      data: { workspaceId: other, email: "foreign-ref@acme.test" },
+    });
+    const local = await mk();
+    await db.prisma.lead.update({ where: { id: local.id }, data: { referredById: foreign.id } });
+    expect((await getLead(db.prisma, ws, local.id)).referredBy).toBeNull();
+  });
   test("keep wins, blanks filled, unions, counters summed, merged soft-deleted", async () => {
     const keep = await mk({ firstName: "A", tags: ["x"], customFields: { k: 1 } });
     const from = await mk({
@@ -277,11 +313,20 @@ describe("merge", () => {
     expect((await db.prisma.leadListMember.findMany({ where: { leadId: keep.id } })).length).toBe(
       1,
     );
-    expect((await audits("lead.merge")).length).toBe(1);
+    expect((await audits("lead.merge")).filter((a) => a.target === keep.id)).toHaveLength(1);
   });
 });
 
 describe("gdpr delete", () => {
+  test("deleting a referrer clears the referred lead link", async () => {
+    const parent = await mk();
+    const child = await mk();
+    await db.prisma.lead.update({ where: { id: child.id }, data: { referredById: parent.id } });
+    await gdprDeleteLead(db.prisma, clock, ws, parent.id);
+    expect(
+      (await db.prisma.lead.findUniqueOrThrow({ where: { id: child.id } })).referredById,
+    ).toBeNull();
+  });
   test("leaves no address behind, keeps the hashed suppression, email can be re-added", async () => {
     const l = await mk({ email: "jo@acme.test" });
     await db.prisma.suppression.create({

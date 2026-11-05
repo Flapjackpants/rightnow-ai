@@ -5,8 +5,10 @@ import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { withTxRetry } from "../dispatch";
 import { addBlocklist } from "../leads/blocklist";
-import { bulkLeads } from "../leads/service";
-import { hashValue } from "../leads/suppression";
+import { companyDomainOf } from "../leads/domain";
+import { bulkLeads, createLead, LeadError } from "../leads/service";
+import { hashValue, isSuppressed } from "../leads/suppression";
+import { parseEmail } from "../leads/validate";
 import type { Classification } from "./classify";
 import { applyInbound } from "./stoprules";
 
@@ -17,7 +19,16 @@ const CATEGORIES = [
   ...["INTERESTED", "MEETING_REQUESTED", "NOT_INTERESTED", "WRONG_PERSON", "NEUTRAL"],
   ...["OUT_OF_OFFICE", "UNSUBSCRIBE", "AUTOMATED", "UNCERTAIN"],
 ] as const;
-const VIEWS = ["primary", "others", "unread", "reminders", "sent", "scheduled", "all"] as const;
+const VIEWS = [
+  "primary",
+  "others",
+  "triage",
+  "unread",
+  "reminders",
+  "sent",
+  "scheduled",
+  "all",
+] as const;
 const text = z.string().trim().min(1).max(200);
 const bool = z.union([z.boolean(), z.enum(["true", "false"]).transform((v) => v === "true")]);
 
@@ -51,9 +62,13 @@ const sentByUs = sql`EXISTS (SELECT 1 FROM "Message" m WHERE m."threadId" = t.id
 const PRIMARY = sql`t."lastInboundAt" IS NOT NULL AND t."lastInboundKind" IS DISTINCT FROM 'BOUNCE'
   AND t."lastInboundKind" IS DISTINCT FROM 'COMPLAINT' AND ${liveLead}`;
 const OTHERS = sql`t."lastInboundAt" IS NOT NULL AND NOT (${PRIMARY})`;
+// a reply from someone who matches no live lead, without the reports and opt-outs that have no person
+const TRIAGE = sql`t."lastInboundAt" IS NOT NULL AND t."lastInboundKind" IS DISTINCT FROM 'BOUNCE'
+  AND t."lastInboundKind" IS DISTINCT FROM 'COMPLAINT' AND NOT (${liveLead})`;
 const VIEW_SQL = {
   primary: PRIMARY,
   others: OTHERS,
+  triage: TRIAGE,
   unread: sql`t."isRead" = false`,
   reminders: sql`t."reminderAt" IS NOT NULL`,
   sent: sentByUs,
@@ -187,6 +202,7 @@ export async function getThread(db: Db, ws: string, id: string) {
         select: {
           id: true,
           email: true,
+          ownerId: true,
           firstName: true,
           lastName: true,
           companyName: true,
@@ -223,7 +239,27 @@ export async function getThread(db: Db, ws: string, id: string) {
         }),
       ])
     : [[], []];
-  return { ...t, messages: await inlineCid(db, t.messages), lead, leadNotes, scheduled, origin };
+  const latestIn = [...t.messages].reverse().find((m) => m.direction === "IN");
+  const domain = latestIn && companyDomainOf(latestIn.fromEmail);
+  // with no live lead, offer colleagues from the sender's company; the user still decides
+  const domainLeads =
+    (!lead || lead.deletedAt) && domain
+      ? await db.lead.findMany({
+          where: { workspaceId: ws, deletedAt: null, companyDomain: domain },
+          select: { id: true, email: true, firstName: true, lastName: true },
+          orderBy: [{ lastContactedAt: { sort: "desc", nulls: "last" } }, { id: "asc" }],
+          take: 5,
+        })
+      : [];
+  return {
+    ...t,
+    messages: await inlineCid(db, t.messages),
+    lead,
+    leadNotes,
+    scheduled,
+    origin,
+    domainLeads,
+  };
 }
 
 const CID_IMAGE = /^image\/(png|jpe?g|gif|webp)$/i;
@@ -350,9 +386,11 @@ export async function readAll(db: Db, ws: string, id: string) {
 }
 
 export async function unreadCount(db: Db, ws: string, now: Date) {
-  const [c] = await db.$queryRaw<{ primary: number; others: number; total: number }[]>`
+  const [c] = await db.$queryRaw<
+    { primary: number; others: number; triage: number; total: number }[]
+  >`
     SELECT (count(*) FILTER (WHERE ${PRIMARY}))::int AS "primary", (count(*) FILTER (WHERE ${OTHERS}))::int AS "others",
-      count(*)::int AS "total"
+      (count(*) FILTER (WHERE ${TRIAGE}))::int AS "triage", count(*)::int AS "total"
     FROM "Thread" t WHERE t."workspaceId" = ${ws} AND t."deletedAt" IS NULL AND t."isRead" = false`;
   const remindersDue = await db.thread.count({
     where: { workspaceId: ws, deletedAt: null, reminderAt: { lte: now } },
@@ -458,6 +496,73 @@ export async function attachLead(
       { timeout: 15_000 },
     ),
   );
+}
+
+/**
+ * A stranger's reply becomes a lead and the thread is attached in one step; `attachLead` then runs the
+ * stop rules once and audits. Bounces, complaints and unsubscribes have no person to add, and an erased or opted-out
+ * address is never recreated.
+ */
+export async function createLeadFromThread(
+  db: Db,
+  clock: Clock,
+  ws: string,
+  actorId: Actor,
+  id: string,
+): Promise<{ leadId: string; created: boolean }> {
+  const t = await db.thread.findFirst({ where: { id, workspaceId: ws, deletedAt: null } });
+  if (!t) throw notFound();
+  if (
+    t.leadId &&
+    (await db.lead.findFirst({
+      where: { id: t.leadId, workspaceId: ws, deletedAt: null },
+      select: { id: true },
+    }))
+  )
+    throw new AccountError(409, "lead_attached");
+  const m = await db.message.findFirst({
+    where: { threadId: id, direction: "IN" },
+    orderBy: [{ sentAt: "desc" }, { id: "desc" }],
+  });
+  if (!m || (m.kind !== "REPLY" && m.kind !== "AUTO_REPLY"))
+    throw new AccountError(400, "not_a_person");
+  const email = parseEmail(m.fromEmail);
+  if (!email) throw new AccountError(400, "not_a_person");
+  if (await isSuppressed(db, ws, email)) throw new AccountError(409, "suppressed");
+
+  const live = () =>
+    db.lead.findFirst({ where: { workspaceId: ws, email, deletedAt: null }, select: { id: true } });
+  const existing = await live();
+  let leadId = existing?.id;
+  let created = false;
+  if (!leadId) {
+    const parts = !m.fromName || m.fromName.includes("@") ? [] : m.fromName.trim().split(/\s+/);
+    const [firstName, ...rest] = parts;
+    try {
+      const lead = await createLead(
+        db,
+        ws,
+        actorId,
+        {
+          email,
+          source: "inbox_triage",
+          ...(firstName && { firstName: firstName.slice(0, 100) }),
+          ...(rest.length && { lastName: rest.join(" ").slice(0, 100) }),
+        },
+        "manual",
+      );
+      leadId = lead.id;
+      created = true;
+    } catch (e) {
+      // a concurrent call created the same lead first
+      if (!(e instanceof LeadError) || e.status !== 409) throw e;
+      const raced = await live();
+      if (!raced) throw e;
+      leadId = raced.id;
+    }
+  }
+  await attachLead(db, clock, ws, actorId, id, leadId);
+  return { leadId, created };
 }
 
 export const bulkThreadsInput = z

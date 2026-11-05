@@ -260,7 +260,13 @@ describe("enrollment", () => {
     const r = await enroll(b, { leadIds: [l1, l2, l3, "missing"] });
     expect(r).toEqual({
       enrolled: 1,
-      skipped: { in_other_active_campaign: 1, already_in_campaign: 0, suppressed: 1, deleted: 1 },
+      skipped: {
+        in_other_active_campaign: 1,
+        already_in_campaign: 0,
+        suppressed: 1,
+        deleted: 1,
+        excluded_region: 0,
+      },
     });
     expect((await enroll(b, { leadIds: [l2] })).skipped.already_in_campaign).toBe(1);
     expect(await enroll(b, { leadIds: [l1], allowDuplicates: true })).toMatchObject({

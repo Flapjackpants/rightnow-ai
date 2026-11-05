@@ -335,3 +335,23 @@ Final review: 1 Critical (bounce-classifier regex ReDoS froze the worker), 3 Imp
 - P8-T03 (84956d2, a78b8bd, d79fb20, e734704, 794ddd4, 0e9e76a, 0ab1bb7): final cross-system review, 3 rounds (opus). Round 1: 0 BLOCKER, 2 SIGNIFICANT (S1 restore of an older backup re-sends steps; S2 leads:create key enrolls via /imports campaignId), 16 MINOR → fix round 1 (restore pauses active campaigns, scope checks, beforeRequest transient errors, two-key test-send lock, docs); accepted m2, m4, m5, m12, m16. Round 2: S1-R SIGNIFICANT (resume re-sends post-dump steps) + n1-n4 → fix round 2 (D53 derived campaign Message-ID, sender settles from a synced outbound Sent copy instead of sending; quota committed; pause reason "restore"; IMAP credential load wrapped; CI pause proof; API.md scopes). Round 3: all closed, 0 BLOCKER/SIGNIFICANT; R3-1 docs (resume only after every mailbox synced since the restore) fixed in 0ab1bb7; R3-2 informational. Verdict: READY FOR RELEASE (real-provider campaign sending still gated on D17 live verification). CI green on 794ddd4.
 - P8-T04 (032f9cb, a89b052): release legal check. Review (sonnet): PASS, 5 Minor (devOptional entries counted, legal-reading wording, ad-hoc extraction script undisclosed, NOTICE said MIT/ISC listed, README line splice); 4 wording fixes applied by controller in a89b052, README splice left (cosmetic). Controller verified the README unsubscribe claim (campaigns/schema.ts toggle accepts only true, D19).
 - Phase 8 gate: CI (check incl. tests, lint, typecheck, Playwright; compose-smoke; imap-real) green on the final commit; T03 opus final review replaced the ponytail-audit reviewer per plan; main fast-forwarded to phase-8-final.
+
+## Phase 9 (2026-11-05)
+
+- P9-T01 (3dc6d2b): MillionVerifier and catch-all handling.
+- P9-T02 (74bbc8f): Inbox triage for non-lead mail.
+- P9-T03 (de6f68e): Customer and region exclusions.
+- P9-T04 (caa6a43): Automated lead capacity.
+- P9-T05 (4bd2eec): Apollo source core and job.
+- P9-T06 (89b38e8): Apollo settings API and UI.
+- P9-T07 (2c4faa3): Referral detection.
+- P9-T08 (8debc42): Slack webhook alerts.
+- P9-T09 (901dda3): Round-robin and territory assignment.
+- P9-T10 (745ff01): Auto-forward and handoff template.
+- P9-T11 (32dbaa8): Re-alerts for unanswered escalations.
+- P9-T12 (49a0e77): HubSpot sync core and job.
+- P9-T13 (d75bc41): HubSpot settings API and UI.
+- P9-T14: External warm-up guide and project records.
+
+Phase 9 differed from the usual workflow: T3 workers built it (DeepSeek for P9-T01, T02 and part of T03; the free pool was exhausted on 2026-11-05 at 01:42 EST, and Codex `gpt-6-sol` handled work from then on). The Opus orchestrator read each stage diff instead of using a separate reviewer subagent. `ponytail-audit` was not run. The orchestrator fixed: T02 name fields sliced to 200 against a 100 limit (spec error); T03 unassigned country codes were accepted; T05 pages advanced past people left by a low credit cap, `apollo_no_emails` fired for existing leads, and new sources sorted last; T09 `automations-meta` test did not allow UI-only types (spec gap); T12 one unreadable config stopped the whole sync.
+- Phase 9 final check: e2e under the production build found a regression from P9-T13, a second `Save` button on `/settings` that broke `campaign-create.spec.ts:23`; fixed in 64be281 with a unique label. Six other e2e failures were confirmed on 0b94987 under the same mode and left alone.

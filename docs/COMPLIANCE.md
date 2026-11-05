@@ -5,10 +5,15 @@ These are engineering notes for the person running rightnow, not legal advice. T
 ## What the software enforces
 
 - **Authorized lists.** An import cannot start until the user confirms they have the right to contact the list (`confirmedAuthorized`, 400 otherwise) and picks a lawful basis. The import records `Lead.source` (`csv:<file>`) and `Lead.lawfulBasis`. The server also sets `Lead.uploadMethod` (`csv`, `manual` for the UI, `api` for a key); it cannot be supplied by the caller (PS-SEC-12).
+- **Apollo sources.** Apollo imports require `confirmedAuthorized` and a lawful basis, record the source on each lead, and honor the blocklist and exclusions.
 - **Honest sender identity.** A message can only be sent From the connected mailbox's own address; any other From is refused before it reaches the provider. No header spoofing, no invisible characters, no fake engagement (PS-SEC-16).
 - **Unsubscribe.** Every campaign email carries a footer with the workspace's physical address and an unsubscribe link, plus `List-Unsubscribe` and (on https) `List-Unsubscribe-Post` headers. A workspace cannot send while its physical address is empty. An unsubscribe stops the lead's sequences and suppresses the address in the same transaction, and the suppression is durable.
 - **Erasure.** `POST /leads/{id}/gdpr-delete` deletes the lead, its threads and messages, notes, webhook deliveries and AI suggestions, deletes or redacts events that hold the address, and keeps only a suppression row holding the sha256 of the address (`value` is null, reason `GDPR_ERASURE`), so the person is never mailed again. `GET /leads/{id}/export` returns everything held about one lead as JSON (access request). Both are audited.
 - **Audit.** Sign-ins, account connect and disconnect, API key creation, exports, erasures, settings changes and member changes are in the audit log (Settings > Audit log).
+
+## Operator responsibilities for Phase 9 integrations
+
+Check that Apollo’s terms allow your use and have a lawful basis for people found through it. Referred leads are not enrolled automatically; contacting them is your decision. HubSpot does not receive later opt-outs or erasures, so apply them there yourself.
 
 ## By region
 

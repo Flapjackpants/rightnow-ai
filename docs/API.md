@@ -25,8 +25,9 @@ when they differ, `openapi.json` wins.
   views: `inbox:*` or `leads:*`). Some routes also need the scopes of the data they read or write: the AI routes
   (`inbox:read` for thread input, `leads:read` for lead input, `leads:update` for `score`, `crm:create` for `recommend`,
   `campaigns:read` for `draft`, `campaigns:read` and `analytics:read` for `campaign-analysis`), `POST /imports` with a
-  `campaignId` (`campaigns:update`), `POST /inbox/threads/bulk` (`blocklist:create` for `blocklist`, `leads:update` for
-  `set_interest`), the `GET /analytics/activity` CSV (`leads:read`), and webhook create/update (`inbox:read` for reply
+  `campaignId` (`campaigns:update`), `POST /inbox/threads/{id}/create-lead` (`leads:create`),
+  `POST /inbox/threads/bulk` (`blocklist:create` for `blocklist`, `leads:update` for `set_interest`), the
+  `GET /analytics/activity` CSV (`leads:read`), and webhook create/update (`inbox:read` for reply
   events, `leads:read` for lead events).
 - Reads trim what a key may not see instead of refusing. `GET /leads/{id}/export` leaves out `threads` without
   `inbox:read` and notes, tasks and deals without `crm:read`, and names them in `omitted` (e.g.
@@ -124,14 +125,16 @@ across a window edge.
 ## Webhooks
 
 Create webhooks with `POST /webhooks` (scope `webhooks:write`). The signing secret (`whsec_...`) is returned once, on
-create and on `rotate-secret`; rotation takes effect immediately with no overlap.
+create and on `rotate-secret`; rotation takes effect immediately with no overlap. Set `format` to `slack` to send formatted text to a Slack Incoming Webhook; its URL is encrypted and masked in API responses. The default `json` format retains the signed JSON payload.
 
 Delivery is at-least-once and unordered, with 8 attempts over about 24 hours; 20 consecutive failures disable the
 webhook (`resume` re-enables it). Event names: `email_sent`, `email_opened`, `email_link_clicked`, `reply_received`,
-`auto_reply_received`, `email_bounced`, `lead_unsubscribed`, `account_error`, `campaign_completed`, `deal_won`,
+`auto_reply_received`, `email_bounced`, `lead_unsubscribed`, `account_error`, `campaign_completed`, `escalation_overdue`, `deal_won`,
 `deal_lost`, `quota_reached`, the interest events `lead_neutral`, `lead_out_of_office`, `lead_interested`,
 `lead_meeting_booked`, `lead_meeting_completed`, `lead_closed`, `lead_not_interested`, `lead_wrong_person`,
 `lead_lost`, `lead_no_show`, a lead label's name, or `all_events`.
+
+`escalation_overdue` is emitted up to three times when a task with `escalateAfterHours` has no direct answer to the lead. Its payload includes `task_title` and `alert_count`; automation rules can reassign the lead and task.
 
 Payload: `event_id, timestamp, event_type, workspace, campaign_id, campaign_name`, and when relevant `lead_email,
 email_account, unibox_url, step, variant, is_first, email_id, email_subject, email_text, email_html,
@@ -191,6 +194,9 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 ## Routes, roles and scopes
 
 "session only" routes reject API keys. The role is the minimum for that method; keys count as MEMBER.
+
+`assign_owner` accepts a single `userId`, a `round_robin` strategy with `userIds`, or a `territory` strategy with country/region entries and an optional fallback owner. Strategy assignments keep an existing owner.
+`forward_to_owner` queues a forward of the latest inbound thread to the lead's current owner. It sends nothing to the prospect and never retries an uncertain send.
 
 <!-- routes:start -->
 | Method | Path | Role | Scope |
@@ -319,6 +325,8 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | PATCH | `/inbox/threads/{id}` | MEMBER | `inbox:write` |
 | DELETE | `/inbox/threads/{id}` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/attach-lead` | MEMBER | `inbox:write` |
+| POST | `/inbox/threads/{id}/create-lead` | MEMBER | `inbox:write` |
+| POST | `/inbox/threads/{id}/handoff` | VIEWER | `inbox:read` |
 | POST | `/inbox/threads/{id}/read-all` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/reply` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/bulk` | MEMBER | `inbox:write` |
@@ -344,6 +352,10 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | DELETE | `/lead-lists/{id}/leads` | MEMBER | `leads:update` |
 | POST | `/lead-lists/{id}/move` | MEMBER | `leads:update` |
 | GET | `/lead-lists/{id}/stats` | VIEWER | `leads:read` |
+| GET | `/lead-sources` | ADMIN | session only |
+| POST | `/lead-sources` | ADMIN | session only |
+| PATCH | `/lead-sources/{id}` | ADMIN | session only |
+| DELETE | `/lead-sources/{id}` | ADMIN | session only |
 | GET | `/leads` | VIEWER | `leads:read` |
 | POST | `/leads` | MEMBER | `leads:create` |
 | GET | `/leads/{id}` | VIEWER | `leads:read` |
@@ -353,6 +365,7 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/leads/{id}/gdpr-delete` | ADMIN | session only |
 | GET | `/leads/{id}/timeline` | VIEWER | `leads:read` |
 | POST | `/leads/bulk` | MEMBER | `leads:update` |
+| GET | `/leads/capacity` | VIEWER | `leads:read` |
 | GET | `/leads/export` | VIEWER | `leads:read` |
 | POST | `/leads/merge` | MEMBER | `leads:update` |
 | POST | `/leads/verify` | MEMBER | `leads:update` |
@@ -373,6 +386,12 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/scheduled-messages/{id}/retry` | MEMBER | `campaigns:update` |
 | GET | `/settings/ai` | ADMIN | session only |
 | PUT | `/settings/ai` | ADMIN | session only |
+| GET | `/settings/apollo` | ADMIN | session only |
+| PUT | `/settings/apollo` | ADMIN | session only |
+| GET | `/settings/hubspot` | ADMIN | session only |
+| PUT | `/settings/hubspot` | ADMIN | session only |
+| DELETE | `/settings/hubspot` | ADMIN | session only |
+| POST | `/settings/hubspot/pipelines` | ADMIN | session only |
 | GET | `/settings/verifier` | ADMIN | session only |
 | PUT | `/settings/verifier` | ADMIN | session only |
 | GET | `/settings/workspace` | ADMIN | session only |

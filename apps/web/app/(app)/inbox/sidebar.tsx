@@ -13,6 +13,7 @@ import type { Filter } from "./types";
 const VIEWS = [
   ["primary", "Primary"],
   ["others", "Others"],
+  ["triage", "Triage"],
   ["unread", "Unread"],
   ["reminders", "Reminders"],
   ["sent", "Sent"],
@@ -29,7 +30,7 @@ export function Sidebar({
   onFilter,
 }: {
   filter: Filter;
-  counts: { primary: number; others: number; total: number; remindersDue: number };
+  counts: { primary: number; others: number; triage: number; total: number; remindersDue: number };
   canEdit: boolean;
   onFilter: (f: Filter) => void;
 }) {
@@ -58,6 +59,7 @@ export function Sidebar({
   const badge: Record<string, number> = {
     primary: counts.primary,
     others: counts.others,
+    triage: counts.triage,
     unread: counts.total,
     reminders: counts.remindersDue,
   };

@@ -37,7 +37,7 @@ Details: `docs/RESUME_INSTRUCTIONS.md`.
   `credentialsEnc` directly elsewhere.
   `Workspace.verifierConfigEnc` (email-verifier URL + API key) is written ONLY through `setVerifierSettings()`, is in
   `ENCRYPTED_COLUMNS`, is never returned by any API (GET gives `hasApiKey`), and a changed host needs a new key.
-  `PUT /settings/verifier` is a session-only ADMIN route.
+  `PUT /settings/verifier` is a session-only ADMIN route. `Workspace.apolloConfigEnc` is written ONLY through `setApolloSettings()`, `Workspace.crmSyncConfigEnc` ONLY through `setCrmSyncSettings()` / `clearCrmSyncSettings()`, and `Webhook.urlEnc` ONLY by the webhook service. All are in `ENCRYPTED_COLUMNS` and never returned by an API; their routes are session-only ADMIN.
 - Error taxonomy (`packages/providers/src/errors.ts`): `AuthError` only for genuine auth failures (`invalid_grant`,
   `interaction_required`, a 401 that survives one refresh, explicit scope reasons, SMTP 530/534/535, IMAP auth failure
   that is not throttling). Unknown 4xx/403 on reads, token-endpoint 5xx, `invalid_client` → `TransientBeforeSendError`.
@@ -48,7 +48,8 @@ Details: `docs/RESUME_INSTRUCTIONS.md`.
   call sends `Prefer: IdType="ImmutableId"`.
 - Worker jobs may scan across workspaces, but every write is conditional on the state they read
   (`updateMany … WHERE <old state>`). Advisory locks use `pg_advisory_xact_lock(<ns>, hashtext(id))`;
-  namespaces: 726001 first-owner setup, 726002 test-send, 726003 campaign planner (per campaign id), 726004 enrollment (per workspace id) (register new ones here) (none added in Phase 7; push uses a unique key). No network call inside a DB transaction.
+  namespaces: 726001 first-owner setup, 726002 test-send, 726003 campaign planner (per campaign id), 726004 enrollment (per workspace id) (register new ones here) (none added in Phase 7 or Phase 9; push uses a unique key). No network call inside a DB transaction.
+- `thread_forward` jobs never retry a send; `job.attempts > 0` fails as `forward_uncertain`.
 - API keys act as MEMBER: ADMIN-only routes (connect, disconnect, delete, test-send) are session-only.
 - Next.js: a URL segment starting with `_` needs a folder named `%5F…` (e.g. `app/api/v1/%5Ffake`).
 
@@ -111,4 +112,4 @@ CI status (`gh` is not installed): `curl -s "https://api.github.com/repos/Analyt
 `docs/PRODUCT_SPEC.md` (requirements + Instantly parity checklist) · `docs/IMPLEMENTATION_PLAN.md` (approved plan) ·
 `docs/plans/` (per-phase step plans) · `docs/TASKS.json` · `docs/PROGRESS.md` · `docs/HANDOFF.md` ·
 `docs/DECISIONS.md` · `docs/REVIEW_LOG.md` · `docs/RESUME_INSTRUCTIONS.md` ·
-`docs/ops/` (LOCAL, VPS, GOOGLE_SETUP, MICROSOFT_SETUP, KEY_ROTATION, LIVE_VERIFICATION, OFFLINE_RECOVERY)
+`docs/ops/` (LOCAL, VPS, GOOGLE_SETUP, MICROSOFT_SETUP, KEY_ROTATION, LIVE_VERIFICATION, OFFLINE_RECOVERY, HUBSPOT_SETUP, EXTERNAL_WARMUP)

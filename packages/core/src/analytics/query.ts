@@ -130,7 +130,7 @@ export const SENDER = sql`COALESCE(sm."accountId", e."accountId")`;
  */
 export function eventScope(ws: string, q: AnalyticsQuery): Prisma.Sql {
   return sql`e."workspaceId" = ${ws} AND e."campaignId" IS NOT NULL AND ${TARGETED_SQL}
-    AND e.type NOT IN ('ACCOUNT_ERROR', 'QUOTA_REACHED', 'CAMPAIGN_COMPLETED', 'LABEL_ADDED')
+    AND e.type NOT IN ('ACCOUNT_ERROR', 'QUOTA_REACHED', 'CAMPAIGN_COMPLETED', 'ESCALATION_OVERDUE', 'LABEL_ADDED')
     AND ${inRange(sql`e."occurredAt"`, q)}
     AND ${filters(q, { campaign: sql`e."campaignId"`, account: SENDER, lead: sql`e."leadId"` })}`;
 }

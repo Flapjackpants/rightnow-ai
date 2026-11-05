@@ -45,7 +45,10 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "Workspace.verifierConfigEnc": 0,
     "Webhook.secretEnc": 0,
     "Webhook.headersEnc": 0,
+    "Webhook.urlEnc": 0,
     "Workspace.aiConfigEnc": 0,
+    "Workspace.apolloConfigEnc": 0,
+    "Workspace.crmSyncConfigEnc": 0,
   });
   const acc = async (id: string) =>
     (await db.prisma.emailAccount.findUniqueOrThrow({ where: { id } })).credentialsEnc;
@@ -61,7 +64,10 @@ test("A to B re-encrypts, keeps nulls, is idempotent; a value under a third key 
     "Workspace.verifierConfigEnc": 0,
     "Webhook.secretEnc": 0,
     "Webhook.headersEnc": 0,
+    "Webhook.urlEnc": 0,
     "Workspace.aiConfigEnc": 0,
+    "Workspace.apolloConfigEnc": 0,
+    "Workspace.crmSyncConfigEnc": 0,
   });
 
   // two rows back on A plus one under a third key: the column is left exactly as it was
@@ -113,11 +119,14 @@ test("Webhook.secretEnc and headersEnc are rotated", async () => {
       events: ["email_sent"],
       secretEnc: encrypt("s", A),
       headersEnc: encrypt("{}", A),
+      urlEnc: encrypt("https://hooks.slack.com/services/token", A),
     },
   });
   const cols = ENCRYPTED_COLUMNS.filter((c) => c.model === "Webhook");
-  expect(cols.map((c) => c.field)).toEqual(["secretEnc", "headersEnc"]);
+  expect(cols.map((c) => c.field)).toEqual(["secretEnc", "headersEnc", "urlEnc"]);
   await rotateColumns(db.prisma, cols, A, B);
   const got = await db.prisma.webhook.findUniqueOrThrow({ where: { id: h.id } });
-  expect([decrypt(got.secretEnc, B), decrypt(got.headersEnc!, B)]).toEqual(["s", "{}"]);
+  expect([decrypt(got.secretEnc, B), decrypt(got.headersEnc!, B), decrypt(got.urlEnc!, B)]).toEqual(
+    ["s", "{}", "https://hooks.slack.com/services/token"],
+  );
 });

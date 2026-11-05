@@ -807,40 +807,43 @@ describe("caps", () => {
   });
 
   test("INVALID, RISKY and CATCH_ALL leads, deleted and suppressed ones are stopped, never planned", async () => {
-    for (const allowRisky of [false, true]) {
-      const s = await seedCampaign(P(), {
-        at: T,
-        leads: 6,
-        accounts: [{ dailyLimit: 100 }],
-        campaign: { allowRisky },
-      });
-      await queue(s);
-      const L = s.leads.map((l) => l.lead.id);
-      await P().lead.update({ where: { id: L[0] }, data: { verificationStatus: "INVALID" } });
-      await P().lead.update({ where: { id: L[1] }, data: { verificationStatus: "RISKY" } });
-      await P().lead.update({ where: { id: L[2] }, data: { verificationStatus: "CATCH_ALL" } });
-      await P().lead.update({ where: { id: L[3] }, data: { deletedAt: T } });
-      await P().suppression.create({
-        data: {
-          workspaceId: s.ws,
-          kind: "EMAIL",
-          value: s.leads[4]!.lead.email,
-          valueHash: hashValue(s.leads[4]!.lead.email),
-          reason: "MANUAL",
-        },
-      });
-      await plan();
-      const st = await Promise.all(s.leads.map((l) => clOf(l.cl.id)));
-      expect(st.map((c) => [c.state, c.stopReason])).toEqual([
-        ["STOPPED", "SKIPPED"],
-        allowRisky ? ["ACTIVE", null] : ["STOPPED", "SKIPPED"],
-        allowRisky ? ["ACTIVE", null] : ["STOPPED", "SKIPPED"],
-        ["STOPPED", "SKIPPED"],
-        ["STOPPED", "SUPPRESSED"],
-        ["ACTIVE", null],
-      ]);
-      expect(await rowsOf(s.campaign.id)).toHaveLength(allowRisky ? 3 : 1);
-    }
+    for (const allowRisky of [false, true])
+      for (const allowCatchAll of [false, true]) {
+        const s = await seedCampaign(P(), {
+          at: T,
+          leads: 6,
+          accounts: [{ dailyLimit: 100 }],
+          campaign: { allowRisky, allowCatchAll },
+        });
+        await queue(s);
+        const L = s.leads.map((l) => l.lead.id);
+        await P().lead.update({ where: { id: L[0] }, data: { verificationStatus: "INVALID" } });
+        await P().lead.update({ where: { id: L[1] }, data: { verificationStatus: "RISKY" } });
+        await P().lead.update({ where: { id: L[2] }, data: { verificationStatus: "CATCH_ALL" } });
+        await P().lead.update({ where: { id: L[3] }, data: { deletedAt: T } });
+        await P().suppression.create({
+          data: {
+            workspaceId: s.ws,
+            kind: "EMAIL",
+            value: s.leads[4]!.lead.email,
+            valueHash: hashValue(s.leads[4]!.lead.email),
+            reason: "MANUAL",
+          },
+        });
+        await plan();
+        const st = await Promise.all(s.leads.map((l) => clOf(l.cl.id)));
+        expect(st.map((c) => [c.state, c.stopReason])).toEqual([
+          ["STOPPED", "SKIPPED"],
+          allowRisky ? ["ACTIVE", null] : ["STOPPED", "SKIPPED"],
+          allowCatchAll ? ["ACTIVE", null] : ["STOPPED", "SKIPPED"],
+          ["STOPPED", "SKIPPED"],
+          ["STOPPED", "SUPPRESSED"],
+          ["ACTIVE", null],
+        ]);
+        expect(await rowsOf(s.campaign.id)).toHaveLength(
+          1 + Number(allowRisky) + Number(allowCatchAll),
+        );
+      }
   });
 
   test("G-I1: leads waiting for verification never use up the page budget", async () => {

@@ -25,6 +25,8 @@ model Workspace {
   leads                Lead[]
   leadLabels           LeadLabel[]
   leadLists            LeadList[]
+  leadSources          LeadSource[]
+  leadSourcesSeen      LeadSourceSeen[]
   suppressions         Suppression[]
   importJobs           ImportJob[]
   campaigns            Campaign[]
@@ -53,9 +55,15 @@ model Workspace {
   firstEmailTextOnly   Boolean               @default(false)
   bounceThresholdPct   Float                 @default(3) // 0.5-20 (D34)
   healthSlowdownPct    Int                   @default(50) // 10-90 (D34)
-  verifierKind         String                @default("mx") // "mx" | "http" (D38)
+  verifierKind         String                @default("mx") // "mx" | "http" | "millionverifier" (D38)
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
   aiConfigEnc          String? // encrypted AiConfig {baseUrl, apiKey, model, prices?, classifierEnabled} (D47)
+  apolloConfigEnc      String?
+  crmSyncConfigEnc     String?
+  crmSyncLastRunAt     DateTime?
+  crmSyncLastError     String?
+  crmSyncLastErrorAt   DateTime?
+  crmCustomersPulledAt DateTime?
   // PS-CRM-12: false drops inbound replies from non-leads outside known threads (D48)
   storeNonLeadMail     Boolean               @default(true)
   verifierLastError    String? // short reason code of the last verifier failure, never a body or key
@@ -66,6 +74,8 @@ model Workspace {
   rewarmExitBouncePct  Float                 @default(2) // 0.5-10: hard bounce % above which a re-warm does not end (D51)
   currency             String                @default("USD") // ISO 4217, one per workspace (D40)
   crmAutoOpportunity   Boolean               @default(true) // D40: an interest change opens a deal
+  excludedCountries    String[]              @default([]) // ISO alpha-2, upper case
+  excludedRegions      String[]              @default([]) // lower-cased
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -442,6 +452,7 @@ enum SuppressionReason {
   MANUAL
   NOT_INTERESTED
   GDPR_ERASURE
+  CUSTOMER
 }
 
 enum ImportStatus {
@@ -485,6 +496,7 @@ model Lead {
   uploadMethod         String? // PS-SEC-12: manual | api | csv, set by the server, never from input
   lawfulBasis          String?
   country              String?
+  region               String?
   importJobId          String?
   emailsSent           Int                @default(0)
   opens                Int                @default(0)
@@ -499,9 +511,13 @@ model Lead {
   lastSenderAccountId  String?
   lastEngagement       Json?
   mergedIntoId         String?
+  referredById         String?
+  referredBy           Lead?              @relation("LeadReferral", fields: [referredById], references: [id], onDelete: SetNull)
+  referrals            Lead[]             @relation("LeadReferral")
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @default(now()) @updatedAt
   deletedAt            DateTime?
+  crmSyncedAt          DateTime?
   listMembers          LeadListMember[]
   campaignLeads        CampaignLead[]
   opportunities        Opportunity[]
@@ -512,6 +528,7 @@ model Lead {
   @@index([workspaceId, createdAt, id])
   @@index([workspaceId, companyDomain])
   @@index([mergedIntoId])
+  @@index([referredById])
   // partial ("workspaceId", "updatedAt") WHERE verificationStatus = 'PENDING_JOB' for the verify job lives in the
   // verify_index migration (raw SQL)
 }
@@ -536,8 +553,44 @@ model LeadList {
   name        String
   createdAt   DateTime         @default(now())
   members     LeadListMember[]
+  sources     LeadSource[]
 
   @@unique([workspaceId, name])
+}
+
+model LeadSource {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name           String
+  enabled        Boolean   @default(true)
+  filters        Json
+  listId         String
+  list           LeadList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  campaignId     String?
+  lawfulBasis    String
+  dailyCreditCap Int       @default(25)
+  nextPage       Int       @default(1)
+  creditDay      DateTime? @db.Date
+  creditsUsed    Int       @default(0)
+  lastRunAt      DateTime?
+  lastError      String?
+  lastErrorAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([enabled, lastRunAt])
+}
+
+/// One row per Apollo person ever paid for or skipped; holds only the vendor id.
+model LeadSourceSeen {
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  externalId  String
+  createdAt   DateTime  @default(now())
+
+  @@id([workspaceId, externalId])
 }
 
 model LeadListMember {
@@ -626,6 +679,7 @@ model Campaign {
   espRoutingRules       Json                 @default("[]")
   accountTags           String[]
   allowRisky            Boolean              @default(false)
+  allowCatchAll         Boolean              @default(false)
   bounceProtect         Boolean              @default(true)
   unsubscribeHeader     Boolean              @default(true)
   unsubscribeLink       Boolean              @default(true)
@@ -917,6 +971,7 @@ enum EventType {
   ACCOUNT_ERROR
   QUOTA_REACHED
   CAMPAIGN_COMPLETED
+  ESCALATION_OVERDUE
   LABEL_ADDED
 }
 
@@ -1237,6 +1292,7 @@ model Opportunity {
   accountId       String?
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
+  crmSyncedAt     DateTime?
 
   tasks           Task[]
 
@@ -1251,7 +1307,7 @@ enum TaskStatus {
   AWAITING_APPROVAL // PS-CRM-08; approving sets OPEN
 }
 
-/** D41: a reminder is the task's dueAt; there are no notifications. */
+/** D41: dueAt is the task reminder; escalation alerts are separate Event rows. */
 model Task {
   id            String       @id @default(cuid())
   workspaceId   String
@@ -1259,6 +1315,9 @@ model Task {
   title         String
   body          String?
   dueAt         DateTime?
+  escalateAfterHours Int?
+  escalationAlerts Int @default(0)
+  nextEscalationAt DateTime?
   assigneeId    String?
   status        TaskStatus   @default(OPEN)
   leadId        String?
@@ -1271,6 +1330,7 @@ model Task {
   updatedAt     DateTime     @updatedAt
 
   @@index([workspaceId, status, dueAt])
+  @@index([nextEscalationAt])
   @@index([leadId])
   @@index([opportunityId])
 }
@@ -1291,6 +1351,7 @@ model AutomationRule {
   conditions  Json            @default("{}")
   actions     Json
   position    Int
+  assignCursor Int             @default(0)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   runs        AutomationRun[]
@@ -1333,6 +1394,8 @@ model Webhook {
   workspace           Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name                String?
   url                 String
+  format              String            @default("json")
+  urlEnc              String?
   events              String[]
   campaignId          String?
   secretEnc           String

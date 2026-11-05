@@ -116,7 +116,7 @@ export function MacrosDialog({
           onChange={(e) => setBody(e.target.value)}
         />
         <Helper id="macro-hint">
-          Variables such as {"{{firstName}}"}, {"{{companyName}}"} or{" "}
+          Variables such as {"{{firstName}}"}, {"{{ownerName}}"}, {"{{ownerEmail}}"} or{" "}
           {"{{sendingAccountFirstName}}"} are filled in from the conversation&apos;s lead and
           mailbox.
         </Helper>

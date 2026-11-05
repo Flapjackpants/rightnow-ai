@@ -21,6 +21,7 @@ const SUB: { href: string; label: string; parent: string }[] = [
   { href: "/blocklist", label: "Blocklist", parent: "/leads" },
   { href: "/deliverability/placement", label: "Inbox placement", parent: "/deliverability" },
   { href: "/settings/api-keys", label: "API keys", parent: "/settings" },
+  { href: "/settings/lead-sources", label: "Lead sources", parent: "/settings" },
 ];
 export const ITEMS: Item[] = [
   ...NAV.map((n) => ({

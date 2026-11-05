@@ -138,6 +138,7 @@ describe("triggers", () => {
       ["unsubscribed", fake("UNSUBSCRIBE"), [fake("COMPLAINT")]],
       ["bounced", fake("BOUNCE_SOFT"), [fake("BOUNCE_UNKNOWN")]],
       ["campaign_completed", fake("CAMPAIGN_COMPLETED"), [fake("ACCEPTED")]],
+      ["escalation_overdue", fake("ESCALATION_OVERDUE"), [fake("ACCEPTED")]],
       ["account_error", fake("ACCOUNT_ERROR", { reason: "auth" }), [fake("SEND_FAILED")]],
       [
         "send_failure_threshold",
@@ -303,6 +304,42 @@ describe("actions", () => {
     );
   });
 
+  test("suppress_company_domain: Suppression DOMAIN/CUSTOMER/automation, the company's open leads stop", async () => {
+    const w = await world();
+    const domain = w.lead!.email.split("@")[1]!;
+    const colleague = await P().lead.create({
+      data: { workspaceId: w.ws, email: `colleague@${domain}` },
+    });
+    const c2 = await P().campaign.create({
+      data: { workspaceId: w.ws, name: "c2", status: "ACTIVE" },
+    });
+    const colCl = await P().campaignLead.create({
+      data: { workspaceId: w.ws, campaignId: c2.id, leadId: colleague.id, state: "ACTIVE" },
+    });
+    await rule(w, "deal_won", [{ type: "suppress_company_domain" }]);
+    await ev(w, "DEAL_WON", { leadId: w.lead!.id });
+    await drain();
+    const s = await P().suppression.findMany({ where: { workspaceId: w.ws } });
+    expect(s.map((x) => [x.kind, x.value, x.reason, x.source])).toEqual([
+      ["DOMAIN", domain, "CUSTOMER", "automation"],
+    ]);
+    expect((await P().campaignLead.findUniqueOrThrow({ where: { id: colCl.id } })).state).toBe(
+      "STOPPED",
+    );
+  });
+
+  test("suppress_company_domain adds nothing for a free-mail lead", async () => {
+    const w = await world();
+    await P().lead.update({
+      where: { id: w.lead!.id },
+      data: { email: "someone@gmail.com" },
+    });
+    await rule(w, "deal_won", [{ type: "suppress_company_domain" }]);
+    await ev(w, "DEAL_WON", { leadId: w.lead!.id });
+    await drain();
+    expect(await P().suppression.count({ where: { workspaceId: w.ws } })).toBe(0);
+  });
+
   test("pause_account until next_day: PAUSED to the next local midnight; NEEDS_ATTENTION unchanged", async () => {
     const s = await seedCampaign(P(), {
       at: T,
@@ -369,6 +406,301 @@ describe("actions", () => {
       }),
     ).toEqual([{ leadId: fresh.id, state: "QUEUED" }]);
     expect((await runs(w.ws)).map((r) => r.status)).toEqual(["OK", "OK", "OK"]);
+  });
+});
+
+describe("owner assignment strategies", () => {
+  test("positive reply keeps the existing owner under round robin", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: a } });
+    await rule(w, "positive_reply", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: w.lead!.id } })).ownerId).toBe(a);
+  });
+
+  test("round robin rotates, skips an owned lead, and keeps the cursor", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    const r = await rule(w, "label_added", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    const leads = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        P().lead.create({
+          data: {
+            workspaceId: w.ws,
+            email: `rotation-${++n}-${i}@test.io`,
+            ...(i === 1 ? { ownerId: b } : {}),
+          },
+        }),
+      ),
+    );
+    for (const lead of leads) await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await drain();
+    expect(
+      (
+        await Promise.all(
+          leads.map((lead) => P().lead.findUniqueOrThrow({ where: { id: lead.id } })),
+        )
+      ).map((lead) => lead.ownerId),
+    ).toEqual([a, b, b, a, b]);
+    expect((await P().automationRule.findUniqueOrThrow({ where: { id: r.id } })).assignCursor).toBe(
+      4,
+    );
+  });
+
+  test("removed members are skipped; no available member fails without assigning", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await rule(w, "label_added", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    await P().member.deleteMany({ where: { workspaceId: w.ws, userId: a } });
+    const lead = await P().lead.create({
+      data: { workspaceId: w.ws, email: `removed-${++n}@test.io` },
+    });
+    await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: lead.id } })).ownerId).toBe(b);
+    await P().member.deleteMany({ where: { workspaceId: w.ws, userId: b } });
+    const other = await P().lead.create({
+      data: { workspaceId: w.ws, email: `removed-${++n}@test.io` },
+    });
+    await ev(w, "LABEL_ADDED", { leadId: other.id });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: other.id } })).ownerId).toBeNull();
+    expect((await runs(w.ws)).find((run) => run.status === "FAILED")?.error).toBe("no_assignee");
+  });
+
+  test("concurrent dispatchers split six leads evenly", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await rule(w, "label_added", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    const leads = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        P().lead.create({ data: { workspaceId: w.ws, email: `concurrent-${++n}-${i}@test.io` } }),
+      ),
+    );
+    for (const lead of leads) await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await Promise.all([
+      dispatchEvents(client(), clock, { maxMs: 0 }),
+      dispatchEvents(client(), clock, { maxMs: 0 }),
+    ]);
+    await drain();
+    const owners = await P().lead.findMany({
+      where: { id: { in: leads.map((lead) => lead.id) } },
+      select: { ownerId: true },
+    });
+    expect(owners.filter((lead) => lead.ownerId === a)).toHaveLength(3);
+    expect(owners.filter((lead) => lead.ownerId === b)).toHaveLength(3);
+  });
+
+  test("territory matches normalized country or region, first match, then fallback", async () => {
+    const w = await world();
+    const [a, b, fallback] = await Promise.all([member(w.ws), member(w.ws), member(w.ws)]);
+    await rule(w, "label_added", [
+      {
+        type: "assign_owner",
+        strategy: "territory",
+        territories: [
+          { countries: ["DE"], userId: a },
+          { regions: ["bavaria"], userId: b },
+        ],
+        fallbackUserId: fallback,
+      },
+    ]);
+    const locations = [
+      { country: "germany", region: " Bavaria " },
+      { region: " Bavaria " },
+      {},
+      { country: "FR" },
+    ];
+    const leads = await Promise.all(
+      locations.map((location, i) =>
+        P().lead.create({
+          data: { workspaceId: w.ws, email: `territory-${++n}-${i}@test.io`, ...location },
+        }),
+      ),
+    );
+    for (const lead of leads) await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await drain();
+    expect(
+      (
+        await Promise.all(
+          leads.map((lead) => P().lead.findUniqueOrThrow({ where: { id: lead.id } })),
+        )
+      ).map((lead) => lead.ownerId),
+    ).toEqual([a, b, fallback, fallback]);
+    const noFallback = await world();
+    await rule(noFallback, "label_added", [
+      {
+        type: "assign_owner",
+        strategy: "territory",
+        territories: [{ countries: ["DE"], userId: await member(noFallback.ws) }],
+      },
+    ]);
+    await ev(noFallback, "LABEL_ADDED", { leadId: noFallback.lead!.id });
+    await drain();
+    expect((await runs(noFallback.ws))[0]).toMatchObject({
+      status: "FAILED",
+      error: "no_assignee",
+    });
+  });
+
+  test("the original owner form still overwrites", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: a } });
+    await rule(w, "label_added", [{ type: "assign_owner", userId: b }]);
+    await ev(w, "LABEL_ADDED", { leadId: w.lead!.id });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: w.lead!.id } })).ownerId).toBe(b);
+  });
+
+  test("validates strategy members, country, empty territory, and mixed input", async () => {
+    const w = await world();
+    const foreign = await member((await world()).ws);
+    const a = await member(w.ws);
+    for (const action of [
+      { strategy: "round_robin", userIds: [a, foreign] },
+      { strategy: "territory", territories: [{ countries: ["DE"], userId: foreign }] },
+      {
+        strategy: "territory",
+        territories: [{ countries: ["DE"], userId: a }],
+        fallbackUserId: foreign,
+      },
+    ])
+      expect(await err(rule(w, "label_added", [{ type: "assign_owner", ...action }]))).toEqual({
+        status: 400,
+        message: "invalid_reference",
+      });
+    expect(
+      await err(
+        rule(w, "label_added", [
+          {
+            type: "assign_owner",
+            strategy: "territory",
+            territories: [{ countries: ["Nowhereland"], userId: a }],
+          },
+        ]),
+      ),
+    ).toEqual({ status: 400, message: "invalid_country" });
+    expect(
+      await err(
+        rule(w, "label_added", [
+          { type: "assign_owner", strategy: "territory", territories: [{ userId: a }] },
+        ]),
+      ),
+    ).toEqual({ status: 400, message: "territory_empty" });
+    expect(
+      (
+        await err(
+          rule(w, "label_added", [
+            { type: "assign_owner", userId: a, strategy: "round_robin", userIds: [a] },
+          ]),
+        )
+      )?.status,
+    ).toBe(400);
+  });
+});
+
+describe("forward_to_owner", () => {
+  test("queues one forward for the event message and never sends in dispatch", async () => {
+    const w = await world();
+    const owner = await member(w.ws);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: owner } });
+    const th = await P().thread.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        leadId: w.lead!.id,
+        subject: "s",
+        lastMessageAt: T,
+        lastInboundAt: T,
+      },
+    });
+    const m = await P().message.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        threadId: th.id,
+        rfcMessageId: `<forward-${++n}@x>`,
+        direction: "IN",
+        kind: "REPLY",
+        folder: "INBOX",
+        fromEmail: w.lead!.email,
+        to: [w.accounts[0]!.email],
+        subject: "s",
+        text: "hot",
+        sentAt: T,
+      },
+    });
+    await rule(w, "positive_reply", [{ type: "forward_to_owner" }]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, messageId: m.id, meta: { to: 1 } });
+    await drain();
+    await drain();
+    expect(
+      await P().backgroundJob.findMany({ where: { workspaceId: w.ws, kind: "thread_forward" } }),
+    ).toMatchObject([{ status: "PENDING", input: { threadId: th.id, to: `${owner}@x.io` } }]);
+    expect(await P().message.count({ where: { threadId: th.id, direction: "OUT" } })).toBe(0);
+  });
+
+  test("sees a round robin assignment made earlier in the rule", async () => {
+    const w = await world();
+    const owner = await member(w.ws);
+    const th = await P().thread.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        leadId: w.lead!.id,
+        subject: "s",
+        lastMessageAt: T,
+        lastInboundAt: T,
+      },
+    });
+    await rule(w, "positive_reply", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [owner] },
+      { type: "forward_to_owner" },
+    ]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+    await drain();
+    expect(
+      (await P().backgroundJob.findFirst({ where: { workspaceId: w.ws, kind: "thread_forward" } }))
+        ?.input,
+    ).toEqual({ threadId: th.id, to: `${owner}@x.io` });
+  });
+
+  test("missing and departed owners fail without jobs", async () => {
+    for (const departed of [false, true]) {
+      const w = await world();
+      if (departed) {
+        const owner = await member(w.ws);
+        await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: owner } });
+        await P().member.deleteMany({ where: { workspaceId: w.ws, userId: owner } });
+      }
+      await rule(w, "positive_reply", [{ type: "forward_to_owner" }]);
+      await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+      await drain();
+      expect(await runs(w.ws)).toMatchObject([{ status: "FAILED", error: "no_owner" }]);
+      expect(await P().backgroundJob.count({ where: { workspaceId: w.ws } })).toBe(0);
+    }
+  });
+
+  test("no inbound thread completes without a forward", async () => {
+    const w = await world();
+    const owner = await member(w.ws);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: owner } });
+    await rule(w, "positive_reply", [{ type: "forward_to_owner" }]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+    await drain();
+    expect(await runs(w.ws)).toMatchObject([{ status: "OK" }]);
+    expect(await P().backgroundJob.count({ where: { workspaceId: w.ws } })).toBe(0);
   });
 });
 
@@ -446,6 +778,10 @@ describe("validation", () => {
       message: "action_not_applicable",
     });
     expect(await err(rule(w, "label_added", [{ type: "pause_account" }]))).toEqual({
+      status: 400,
+      message: "action_not_applicable",
+    });
+    expect(await err(rule(w, "escalation_overdue", [{ type: "pause_account" }]))).toEqual({
       status: 400,
       message: "action_not_applicable",
     });
@@ -1001,10 +1337,12 @@ describe("A12: no automation sends mail by itself", () => {
         "create_opportunity",
         "create_task",
         "enroll_campaign",
+        "forward_to_owner",
         "move_to_subsequence",
         "pause_account",
         "send_webhook",
         "stop_sequence",
+        "suppress_company_domain",
         "suppress_contact",
       ].sort(),
     );

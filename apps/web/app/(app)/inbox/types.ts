@@ -44,6 +44,7 @@ export type Detail = Omit<ThreadRow, "messages"> & {
   leadNotes: Note[];
   lead: {
     id: string;
+    ownerId: string | null;
     email: string;
     firstName: string | null;
     lastName: string | null;
@@ -54,6 +55,12 @@ export type Detail = Omit<ThreadRow, "messages"> & {
     deletedAt: string | null;
   } | null;
   scheduled: { id: string; dueAt: string; renderedSubject: string }[];
+  domainLeads: {
+    id: string;
+    email: string;
+    firstName: string | null;
+    lastName: string | null;
+  }[];
   origin: {
     step: { order: number };
     variant: { label: string } | null;

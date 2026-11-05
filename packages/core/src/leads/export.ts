@@ -8,7 +8,17 @@ export { csvCell, line } from "../csv"; // index.ts re-exports this file, so the
 
 const FIXED = [
   ...["email", "firstName", "lastName", "companyName", "companyDomain", "jobTitle", "website"],
-  ...["industry", "phone", "personalization", "country", "source", "lawfulBasis", "tags", "labels"],
+  ...[
+    "industry",
+    "phone",
+    "personalization",
+    "country",
+    "region",
+    "source",
+    "lawfulBasis",
+    "tags",
+    "labels",
+  ],
   ...["verificationStatus", "espType", "esg", "interestStatus", "createdAt"],
 ] as const;
 

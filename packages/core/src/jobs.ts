@@ -1,11 +1,13 @@
 import type { BackgroundJob, JobStatus, Prisma, PrismaClient } from "@rightnow/db/client";
 import { AccountError, isPrismaCode } from "./accounts/service";
+import { createProvider } from "./accounts/factory";
 import { personalizeJob } from "./ai/features";
 import { audit } from "./audit";
 import { placementRunJob } from "./deliverability/placement";
 import type { Clock } from "./clock";
 import type { Env } from "./env";
 import type { SyncDeps } from "./mail/sync";
+import { runThreadForward } from "./mail/forward";
 import { bulkInput, bulkLeads, leadWhere } from "./leads/service";
 
 type Db = PrismaClient | Prisma.TransactionClient;
@@ -53,6 +55,14 @@ export async function createJob(
 }
 
 export const JOB_HANDLERS: Record<string, Handler> = {
+  thread_forward: (prisma, clock, job, progress, _signal, deps) =>
+    runThreadForward(
+      prisma,
+      clock,
+      job,
+      progress,
+      deps.providerFor ?? (async (a) => createProvider(a, { prisma, clock })),
+    ),
   ai_personalize: personalizeJob,
   /** D51: the sends of a placement test whose rows `startPlacementTest` stored. */
   placement_run: placementRunJob,

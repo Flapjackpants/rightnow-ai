@@ -940,6 +940,174 @@
    "model": "sonnet",
    "commit": "a89b052",
    "acceptance": "License report committed (docs/LICENSES.md) with no incompatible deps; secret scan clean (or findings rotated + purged per user approval); README/branding reviewed; CONTRIBUTING with DCO; findings summarized for the user, who decides on lawyer review"
+  },
+  {
+   "id": "P9-T01",
+   "phase": 9,
+   "title": "MillionVerifier and catch-all",
+   "status": "done",
+   "deps": [
+    "P8-T04"
+   ],
+   "model": "opencode-free",
+   "commit": "3dc6d2b",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T02",
+   "phase": 9,
+   "title": "Inbox triage",
+   "status": "done",
+   "deps": [
+    "P9-T01"
+   ],
+   "model": "opencode-free",
+   "commit": "74bbc8f",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T03",
+   "phase": 9,
+   "title": "Customer and region exclusions",
+   "status": "done",
+   "deps": [
+    "P9-T02"
+   ],
+   "model": "opencode-free",
+   "commit": "de6f68e",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T04",
+   "phase": 9,
+   "title": "Lead capacity",
+   "status": "done",
+   "deps": [
+    "P9-T03"
+   ],
+   "model": "opencode-free",
+   "commit": "caa6a43",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T05",
+   "phase": 9,
+   "title": "Apollo core and job",
+   "status": "done",
+   "deps": [
+    "P9-T04"
+   ],
+   "model": "opencode-free",
+   "commit": "4bd2eec",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T06",
+   "phase": 9,
+   "title": "Apollo API and UI",
+   "status": "done",
+   "deps": [
+    "P9-T05"
+   ],
+   "model": "opencode-free",
+   "commit": "89b38e8",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T07",
+   "phase": 9,
+   "title": "Referrals",
+   "status": "done",
+   "deps": [
+    "P9-T06"
+   ],
+   "model": "opencode-free",
+   "commit": "2c4faa3",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T08",
+   "phase": 9,
+   "title": "Slack alerts",
+   "status": "done",
+   "deps": [
+    "P9-T07"
+   ],
+   "model": "opencode-free",
+   "commit": "8debc42",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T09",
+   "phase": 9,
+   "title": "Round-robin and territory assignment",
+   "status": "done",
+   "deps": [
+    "P9-T08"
+   ],
+   "model": "opencode-free",
+   "commit": "901dda3",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T10",
+   "phase": 9,
+   "title": "Auto-forward and handoff template",
+   "status": "done",
+   "deps": [
+    "P9-T09"
+   ],
+   "model": "opencode-free",
+   "commit": "745ff01",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T11",
+   "phase": 9,
+   "title": "Re-alerting on unanswered escalations",
+   "status": "done",
+   "deps": [
+    "P9-T10"
+   ],
+   "model": "opencode-free",
+   "commit": "32dbaa8",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T12",
+   "phase": 9,
+   "title": "HubSpot core and job",
+   "status": "done",
+   "deps": [
+    "P9-T11"
+   ],
+   "model": "opencode-free",
+   "commit": "49a0e77",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T13",
+   "phase": 9,
+   "title": "HubSpot API and UI",
+   "status": "done",
+   "deps": [
+    "P9-T12"
+   ],
+   "model": "opencode-free",
+   "commit": "d75bc41",
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
+  },
+  {
+   "id": "P9-T14",
+   "phase": 9,
+   "title": "Warmup docs and project records",
+   "status": "done",
+   "deps": [
+    "P9-T13"
+   ],
+   "model": "opencode-free",
+   "commit": null,
+   "acceptance": "Tests for this feature pass; lint and typecheck clean"
   }
  ]
 }

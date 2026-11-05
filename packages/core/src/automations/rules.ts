@@ -3,6 +3,7 @@ import { z } from "zod";
 import { AccountError, notFound } from "../accounts/service";
 import { scopeAllows } from "../apikeys";
 import { audit } from "../audit";
+import { normalizeCountry } from "../leads/regions";
 import {
   ACCOUNTLESS_TRIGGERS,
   ACTIONS,
@@ -72,6 +73,14 @@ async function validate(
   const of = (t: string, k: string) =>
     acts.flatMap((a) => (a.type === t && typeof a[k] === "string" ? [a[k] as string] : []));
   const uniq = (a: string[]) => [...new Set(a)];
+  const assignments = acts.filter((a) => a.type === "assign_owner");
+  for (const a of assignments) {
+    if (a.strategy !== "territory") continue;
+    for (const t of a.territories as { countries?: string[]; regions?: string[] }[]) {
+      if (!t.countries?.length && !t.regions?.length) throw bad("territory_empty");
+      if (t.countries?.some((country) => !normalizeCountry(country))) throw bad("invalid_country");
+    }
+  }
   const campaigns = uniq([
     ...(d.conditions?.campaignIds ?? []),
     ...of("stop_sequence", "campaignId"),
@@ -80,7 +89,17 @@ async function validate(
   const accounts = uniq(d.conditions?.accountIds ?? []);
   const lists = uniq(of("add_to_list", "listId"));
   const subs = uniq(of("move_to_subsequence", "subsequenceId"));
-  const users = uniq([...of("assign_owner", "userId"), ...of("create_task", "assigneeId")]);
+  const users = uniq([
+    ...of("assign_owner", "userId"),
+    ...of("assign_owner", "fallbackUserId"),
+    ...assignments.flatMap((a) => (Array.isArray(a.userIds) ? (a.userIds as string[]) : [])),
+    ...assignments.flatMap((a) =>
+      Array.isArray(a.territories)
+        ? (a.territories as { userId: string }[]).map((t) => t.userId)
+        : [],
+    ),
+    ...of("create_task", "assigneeId"),
+  ]);
   const hooks = uniq(of("send_webhook", "webhookId"));
   const counts = await Promise.all([
     campaigns.length &&

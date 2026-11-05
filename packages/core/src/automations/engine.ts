@@ -7,6 +7,8 @@ import { enrollBatch, moveToSubsequenceTx, noSkips } from "../campaigns/enroll";
 import { sleep, type Clock } from "../clock";
 import { ensureOpportunity, errorCode, inSavepoint } from "../crm/opportunities";
 import { isLockTimeout, isRetryable, withTxRetry } from "../dispatch";
+import { companyDomainOf } from "../leads/domain";
+import { normalizeCountry, normalizeRegion } from "../leads/regions";
 import { suppress } from "../leads/suppression";
 import { startOfNextDay } from "../schedule";
 import { enqueueDelivery, insertDeliveries } from "../webhooks/deliver";
@@ -33,6 +35,7 @@ export const TRIGGERS: Record<string, (e: Event) => boolean> = {
   unsubscribed: (e) => e.type === "UNSUBSCRIBE",
   bounced: (e) => e.type === "BOUNCE_HARD" || e.type === "BOUNCE_SOFT",
   campaign_completed: (e) => e.type === "CAMPAIGN_COMPLETED",
+  escalation_overdue: (e) => e.type === "ESCALATION_OVERDUE",
   account_error: (e) => e.type === "ACCOUNT_ERROR",
   send_failure_threshold: (e) =>
     e.type === "ACCOUNT_ERROR" &&
@@ -50,6 +53,7 @@ export const LEADLESS_TRIGGERS = new Set([
 ]);
 /** Triggers whose Events never name a mailbox (R6: `pause_account` is refused on them). */
 export const ACCOUNTLESS_TRIGGERS = new Set([
+  "escalation_overdue",
   "positive_reply",
   "negative_reply",
   "status_changed",
@@ -124,20 +128,36 @@ export const ACTIONS: Record<string, Action> = {
     z.strictObject({
       title: z.string().trim().min(1).max(200),
       dueInDays: z.number().int().min(0).max(365).optional(),
+      escalateAfterHours: z.number().int().min(1).max(720).optional(),
       assigneeId: ref.optional(),
     }),
-    (tx, clock, e, d) =>
-      tx.task.create({
+    async (tx, clock, e, d) => {
+      const owner =
+        d.escalateAfterHours !== undefined && !d.assigneeId && e.leadId
+          ? await tx.lead.findFirst({
+              where: { id: e.leadId, workspaceId: e.workspaceId },
+              select: { ownerId: true },
+            })
+          : null;
+      return tx.task.create({
         data: {
           workspaceId: e.workspaceId,
           title: d.title,
           dueAt:
             d.dueInDays === undefined ? null : new Date(e.occurredAt.getTime() + d.dueInDays * DAY),
-          assigneeId: d.assigneeId ?? null,
+          assigneeId:
+            d.escalateAfterHours === undefined
+              ? (d.assigneeId ?? null)
+              : (d.assigneeId ?? owner?.ownerId ?? null),
           leadId: e.leadId,
           createdAt: clock.now(),
+          ...(d.escalateAfterHours !== undefined && {
+            escalateAfterHours: d.escalateAfterHours,
+            nextEscalationAt: new Date(clock.now().getTime() + d.escalateAfterHours * 3_600_000),
+          }),
         },
-      }),
+      });
+    },
   ),
   suppress_contact: act("blocklist:write", true, none, async (tx, clock, e) => {
     const l = await tx.lead.findFirst({
@@ -148,6 +168,16 @@ export const ACTIONS: Record<string, Action> = {
     // as optOutTx: the stop reason before suppress(), which stamps SUPPRESSED on whatever is still open
     await stopOpenCampaignLeads(tx, e.workspaceId, [e.leadId!], "SUPPRESSED", clock.now());
     await suppress(tx, e.workspaceId, [{ kind: "EMAIL", value: l.email }], "MANUAL", "automation");
+  }),
+  suppress_company_domain: act("blocklist:write", true, none, async (tx, _clock, e) => {
+    const l = await tx.lead.findFirst({
+      where: { id: e.leadId!, workspaceId: e.workspaceId },
+      select: { email: true },
+    });
+    if (!l) return;
+    const value = companyDomainOf(l.email);
+    if (!value) return; // free mail has no company domain
+    await suppress(tx, e.workspaceId, [{ kind: "DOMAIN", value }], "CUSTOMER", "automation");
   }),
   pause_account: act(
     "accounts:write",
@@ -214,12 +244,143 @@ export const ACTIONS: Record<string, Action> = {
       await moveToSubsequenceTx(tx, clock, e.workspaceId, null, cl.id, d.subsequenceId);
     },
   ),
-  assign_owner: act("leads:write", true, z.strictObject({ userId: ref }), (tx, _c, e, d) =>
-    tx.lead.updateMany({
-      where: { id: e.leadId!, workspaceId: e.workspaceId },
-      data: { ownerId: d.userId },
-    }),
+  assign_owner: act(
+    "leads:write",
+    true,
+    z.union([
+      z.strictObject({ userId: ref }),
+      z.strictObject({ strategy: z.literal("round_robin"), userIds: z.array(ref).min(1).max(50) }),
+      z.strictObject({
+        strategy: z.literal("territory"),
+        territories: z
+          .array(
+            z.strictObject({
+              countries: z.array(z.string().trim().min(1).max(100)).max(250).optional(),
+              regions: z.array(z.string().trim().min(1).max(100)).max(200).optional(),
+              userId: ref,
+            }),
+          )
+          .min(1)
+          .max(50),
+        fallbackUserId: ref.optional(),
+      }),
+    ]),
+    async (tx, _c, e, d, ruleId) => {
+      const escalation = e.type === "ESCALATION_OVERDUE";
+      const moveTask = async (ownerId: string) => {
+        const taskId = meta(e).taskId;
+        if (escalation && typeof taskId === "string")
+          await tx.task.updateMany({
+            where: { id: taskId, workspaceId: e.workspaceId },
+            data: { assigneeId: ownerId },
+          });
+      };
+      if ("userId" in d) {
+        await tx.lead.updateMany({
+          where: { id: e.leadId!, workspaceId: e.workspaceId },
+          data: { ownerId: d.userId },
+        });
+        await moveTask(d.userId);
+        return;
+      }
+      const lead = await tx.lead.findFirst({
+        where: { id: e.leadId!, workspaceId: e.workspaceId },
+        select: { ownerId: true, country: true, region: true },
+      });
+      // Rotation and territories must not take an existing lead from its rep.
+      if (!lead || (lead.ownerId && !escalation)) return;
+      let ownerId: string | undefined;
+      if (d.strategy === "round_robin") {
+        const rows = await tx.$queryRaw<{ assignCursor: number }[]>`UPDATE "AutomationRule"
+          SET "assignCursor" = "assignCursor" + 1
+          WHERE id = ${ruleId} AND "workspaceId" = ${e.workspaceId}
+          RETURNING "assignCursor"`;
+        const start = ((rows[0]?.assignCursor ?? 1) - 1) % d.userIds.length;
+        const members = await tx.member.findMany({
+          where: { workspaceId: e.workspaceId, userId: { in: d.userIds } },
+          select: { userId: true },
+        });
+        const available = new Set(members.map((m) => m.userId));
+        if (escalation && lead.ownerId) available.delete(lead.ownerId);
+        ownerId = Array.from(
+          { length: d.userIds.length },
+          (_, i) => d.userIds[(start + i) % d.userIds.length]!,
+        ).find((id) => available.has(id));
+      } else {
+        const country = normalizeCountry(lead.country);
+        const region = normalizeRegion(lead.region);
+        const candidates = [...d.territories.map((t) => t.userId), d.fallbackUserId].filter(
+          (id): id is string => !!id,
+        );
+        const members = await tx.member.findMany({
+          where: { workspaceId: e.workspaceId, userId: { in: candidates } },
+          select: { userId: true },
+        });
+        const available = new Set(members.map((m) => m.userId));
+        if (escalation && lead.ownerId) available.delete(lead.ownerId);
+        ownerId = d.territories.find(
+          (t) =>
+            available.has(t.userId) &&
+            ((!!country && !!t.countries?.some((c) => normalizeCountry(c) === country)) ||
+              (!!region && !!t.regions?.some((r) => normalizeRegion(r) === region))),
+        )?.userId;
+        if (!ownerId && d.fallbackUserId && available.has(d.fallbackUserId))
+          ownerId = d.fallbackUserId;
+      }
+      if (!ownerId) {
+        if (escalation) return;
+        throw coded("no_assignee");
+      }
+      const changed = await tx.lead.updateMany({
+        where: {
+          id: e.leadId!,
+          workspaceId: e.workspaceId,
+          ownerId: escalation ? lead.ownerId : null,
+        },
+        data: { ownerId },
+      });
+      if (changed.count) await moveTask(ownerId);
+    },
   ),
+  forward_to_owner: act("inbox:write", true, none, async (tx, _clock, e) => {
+    const lead = await tx.lead.findFirst({
+      where: { id: e.leadId!, workspaceId: e.workspaceId },
+      select: { ownerId: true },
+    });
+    if (!lead?.ownerId) throw coded("no_owner");
+    const member = await tx.member.findFirst({
+      where: { workspaceId: e.workspaceId, userId: lead.ownerId },
+      select: { user: { select: { email: true } } },
+    });
+    if (!member) throw coded("no_owner");
+    const threadId = e.messageId
+      ? (
+          await tx.message.findFirst({
+            where: { id: e.messageId, workspaceId: e.workspaceId },
+            select: { threadId: true },
+          })
+        )?.threadId
+      : (
+          await tx.thread.findFirst({
+            where: {
+              workspaceId: e.workspaceId,
+              leadId: e.leadId!,
+              deletedAt: null,
+              lastInboundAt: { not: null },
+            },
+            orderBy: { lastInboundAt: "desc" },
+            select: { id: true },
+          })
+        )?.id;
+    if (!threadId) return;
+    await tx.backgroundJob.create({
+      data: {
+        workspaceId: e.workspaceId,
+        kind: "thread_forward",
+        input: { threadId, to: member.user.email },
+      },
+    });
+  }),
   add_tag: act(
     "leads:write",
     true,

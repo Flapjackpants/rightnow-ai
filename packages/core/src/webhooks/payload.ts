@@ -14,6 +14,7 @@ const LEAD_FIELDS = [
   ["phone", "phone"],
   ["personalization", "personalization"],
   ["country", "country"],
+  ["region", "region"],
 ] as const;
 /** Every key the payload sets itself, present or not: a lead custom field with one of these names is dropped, never passed off as standard. */
 const STANDARD_FIELDS: ReadonlySet<string> = new Set([
@@ -26,6 +27,7 @@ const STANDARD_FIELDS: ReadonlySet<string> = new Set([
   "lead_email",
   ...LEAD_FIELDS.map(([, out]) => out),
   "email_account",
+  "reason",
   "unibox_url",
   "step",
   "variant",
@@ -38,6 +40,8 @@ const STANDARD_FIELDS: ReadonlySet<string> = new Set([
   "reply_text",
   "reply_html",
   "reply_text_snippet",
+  "task_title",
+  "alert_count",
 ]);
 /** Round C: the lead's part of a payload (its address, standard fields and custom fields, i.e. any non-standard key). */
 export const isLeadKey = (k: string) =>
@@ -104,6 +108,29 @@ export async function buildPayload(
     for (const [k, out] of LEAD_FIELDS) p[out] = lead[k];
   }
   if (account) p.email_account = account.email;
+  if (e.type === "ESCALATION_OVERDUE") {
+    const meta =
+      e.meta && typeof e.meta === "object" && !Array.isArray(e.meta)
+        ? (e.meta as Record<string, unknown>)
+        : {};
+    const task =
+      typeof meta.taskId === "string"
+        ? await tx.task.findFirst({
+            where: { id: meta.taskId, workspaceId: ws },
+            select: { title: true },
+          })
+        : null;
+    p.task_title = task?.title ?? null;
+    p.alert_count = typeof meta.alert === "number" ? meta.alert : null;
+  }
+  if (
+    e.type === "ACCOUNT_ERROR" &&
+    e.meta &&
+    typeof e.meta === "object" &&
+    !Array.isArray(e.meta) &&
+    typeof (e.meta as Record<string, unknown>).reason === "string"
+  )
+    p.reason = (e.meta as Record<string, unknown>).reason;
   if (msg) p.unibox_url = `${appUrl.replace(/\/+$/, "")}/inbox?thread=${msg.threadId}`;
   if (step) {
     const labels = step.variants.map((v) => v.label).sort();

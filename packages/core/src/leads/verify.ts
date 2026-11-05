@@ -25,7 +25,7 @@ const MAX_BODY = 64 * 1024;
 
 /** `null` = leave the lead's status unchanged. Cost of an external verifier is the user's (D38). */
 export interface EmailVerifier {
-  readonly kind: "mx" | "http";
+  readonly kind: "mx" | "http" | "millionverifier";
   verify(email: string, signal: AbortSignal): Promise<VerificationStatus | null>;
 }
 
@@ -117,6 +117,59 @@ export function httpVerifier(
       const status = typeof v === "string" ? MAPPED[v.toLowerCase()] : undefined;
       if (!status) throw coded("bad_status_path");
       return status;
+    },
+  };
+}
+
+export const MILLIONVERIFIER_URL = "https://api.millionverifier.com/api/v3/";
+
+/** MillionVerifier's `result` values; `unknown` is a valid answer that leaves the lead's status unchanged. */
+const MV_RESULT: Record<string, VerificationStatus | null> = {
+  ok: "VERIFIED",
+  catch_all: "CATCH_ALL",
+  invalid: "INVALID",
+  disposable: "RISKY",
+  unknown: null,
+};
+
+/** GETs MillionVerifier's v3 API through safeRequest; the top-level `result` field is the whole answer. */
+export function millionVerifier(
+  cfg: { apiKey: string },
+  request: typeof safeRequest = safeRequest,
+  resolve?: (host: string) => Promise<string[]>,
+  allowPrivate = false,
+): EmailVerifier {
+  return {
+    kind: "millionverifier",
+    async verify(email, signal) {
+      const q = new URLSearchParams({ api: cfg.apiKey, email, timeout: "8" });
+      let res;
+      try {
+        res = await request(`${MILLIONVERIFIER_URL}?${q}`, {
+          method: "GET",
+          signal,
+          timeoutMs: TIMEOUT_MS,
+          maxResponseBytes: MAX_BODY,
+          allowPrivate,
+          resolve,
+        });
+      } catch (e) {
+        if (e instanceof HttpOutError)
+          throw coded(e.code === "response_too_large" ? "bad_response" : e.code);
+        throw e;
+      }
+      if (res.status >= 300) throw coded(`http_${res.status}`);
+      let v: unknown;
+      try {
+        v = JSON.parse(res.body.toString("utf8"));
+      } catch {
+        throw coded("bad_response");
+      }
+      const result = (v as { result?: unknown } | null)?.result;
+      if (typeof result !== "string") throw coded("bad_status_path");
+      const key = result.toLowerCase();
+      if (!Object.hasOwn(MV_RESULT, key)) throw coded("bad_status_path");
+      return MV_RESULT[key]!;
     },
   };
 }
@@ -253,6 +306,10 @@ export const verifierInput = z.discriminatedUnion("kind", [
     apiKey: z.string().min(1).max(500).optional(), // omitted = keep the stored key
     statusPath,
   }),
+  z.strictObject({
+    kind: z.literal("millionverifier"),
+    apiKey: z.string().min(1).max(500).optional(), // omitted = keep the stored key
+  }),
 ]);
 type Config = { url: string; apiKey: string; statusPath: string };
 
@@ -298,10 +355,13 @@ export async function setVerifierSettings(
   );
   // the stored key is never sent to a different host: a new host needs a new key
   if (
-    v.kind === "http" &&
+    v.kind !== "mx" &&
     !(
       v.apiKey ??
-      (old && new URL(old.url).origin === new URL(v.url).origin ? old.apiKey : undefined)
+      (old &&
+      new URL(old.url).origin === new URL(v.kind === "http" ? v.url : MILLIONVERIFIER_URL).origin
+        ? old.apiKey
+        : undefined)
     )
   )
     throw new AccountError(400, "api_key_required");
@@ -312,12 +372,12 @@ export async function setVerifierSettings(
         v.kind === "mx"
           ? { verifierKind: "mx" } // the stored config stays, so switching back needs no re-entry
           : {
-              verifierKind: "http",
+              verifierKind: v.kind,
               verifierConfigEnc: encrypt(
                 JSON.stringify({
-                  url: v.url,
+                  url: v.kind === "http" ? v.url : MILLIONVERIFIER_URL,
                   apiKey: v.apiKey ?? old!.apiKey,
-                  statusPath: v.statusPath,
+                  statusPath: v.kind === "http" ? v.statusPath : "result",
                 }),
               ),
             },
@@ -339,6 +399,13 @@ export async function workspaceVerifier(
     select: { verifierKind: true, verifierConfigEnc: true },
   });
   const c = readConfig(w.verifierConfigEnc);
+  if (w.verifierKind === "millionverifier" && c)
+    return millionVerifier(
+      { apiKey: c.apiKey },
+      safeRequest,
+      undefined,
+      outEnv(getEnv()).allowPrivate,
+    );
   return w.verifierKind === "http" && c
     ? httpVerifier(c, safeRequest, undefined, outEnv(getEnv()).allowPrivate)
     : mxVerifier(resolveMx);

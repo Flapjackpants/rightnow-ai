@@ -163,7 +163,7 @@ export const lockEnrollment = (tx: Tx, ws: string) =>
   tx.$executeRaw`SELECT pg_advisory_xact_lock(${ENROLL_LOCK}::int, hashtext(${ws}))`;
 
 /** Campaign statuses that count as live for the cross-campaign conflict rule (system-paused ones included). */
-const LIVE_STATUSES = ["ACTIVE", "PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const;
+export const LIVE_STATUSES = ["ACTIVE", "PAUSED", "ACCOUNTS_UNHEALTHY", "BOUNCE_PROTECT"] as const;
 
 /** The conflict rule: which of these leads are open in a live campaign other than `exceptCampaignId`. */
 export async function openInOtherLive(

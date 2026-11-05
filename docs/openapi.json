@@ -3561,7 +3561,8 @@
                 "COMPLAINT",
                 "MANUAL",
                 "NOT_INTERESTED",
-                "GDPR_ERASURE"
+                "GDPR_ERASURE",
+                "CUSTOMER"
               ]
             }
           },
@@ -4035,6 +4036,9 @@
                   "allowRisky": {
                     "type": "boolean"
                   },
+                  "allowCatchAll": {
+                    "type": "boolean"
+                  },
                   "bounceProtect": {
                     "type": "boolean"
                   },
@@ -4341,6 +4345,9 @@
                     }
                   },
                   "allowRisky": {
+                    "type": "boolean"
+                  },
+                  "allowCatchAll": {
                     "type": "boolean"
                   },
                   "bounceProtect": {
@@ -6475,6 +6482,9 @@
                       "allowRisky": {
                         "type": "boolean"
                       },
+                      "allowCatchAll": {
+                        "type": "boolean"
+                      },
                       "bounceProtect": {
                         "type": "boolean"
                       },
@@ -8349,6 +8359,7 @@
               "enum": [
                 "primary",
                 "others",
+                "triage",
                 "unread",
                 "reminders",
                 "sent",
@@ -8712,6 +8723,70 @@
         }
       }
     },
+    "/inbox/threads/{id}/create-lead": {
+      "post": {
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-role": "MEMBER",
+        "x-scope": "inbox:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/inbox/threads/{id}/handoff": {
+      "post": {
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-role": "VIEWER",
+        "x-scope": "inbox:read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/inbox/threads/{id}/read-all": {
       "post": {
         "security": [
@@ -8814,6 +8889,7 @@
                         "enum": [
                           "primary",
                           "others",
+                          "triage",
                           "unread",
                           "reminders",
                           "sent",
@@ -9101,6 +9177,7 @@
                             "enum": [
                               "primary",
                               "others",
+                              "triage",
                               "unread",
                               "reminders",
                               "sent",
@@ -9325,6 +9402,7 @@
                             "enum": [
                               "primary",
                               "others",
+                              "triage",
                               "unread",
                               "reminders",
                               "sent",
@@ -10191,6 +10269,325 @@
         }
       }
     },
+    "/lead-sources": {
+      "get": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "post": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "filters": {
+                    "type": "object",
+                    "properties": {
+                      "personTitles": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "personLocations": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "personSeniorities": {
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "owner",
+                            "founder",
+                            "c_suite",
+                            "partner",
+                            "vp",
+                            "head",
+                            "director",
+                            "manager",
+                            "senior",
+                            "entry"
+                          ]
+                        }
+                      },
+                      "organizationLocations": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "employeeRanges": {
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^\\d{1,7},\\d{1,7}$"
+                        }
+                      },
+                      "keywords": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "listId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "campaignId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dailyCreditCap": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  },
+                  "lawfulBasis": {
+                    "type": "string",
+                    "enum": [
+                      "legitimate_interest",
+                      "consent",
+                      "contract",
+                      "other"
+                    ]
+                  },
+                  "confirmedAuthorized": {
+                    "type": "boolean",
+                    "const": true
+                  }
+                },
+                "required": [
+                  "name",
+                  "filters",
+                  "listId",
+                  "lawfulBasis",
+                  "confirmedAuthorized"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/lead-sources/{id}": {
+      "patch": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "filters": {
+                    "type": "object",
+                    "properties": {
+                      "personTitles": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "personLocations": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "personSeniorities": {
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "owner",
+                            "founder",
+                            "c_suite",
+                            "partner",
+                            "vp",
+                            "head",
+                            "director",
+                            "manager",
+                            "senior",
+                            "entry"
+                          ]
+                        }
+                      },
+                      "organizationLocations": {
+                        "maxItems": 50,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 200
+                        }
+                      },
+                      "employeeRanges": {
+                        "maxItems": 10,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^\\d{1,7},\\d{1,7}$"
+                        }
+                      },
+                      "keywords": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200
+                      }
+                    },
+                    "additionalProperties": false
+                  },
+                  "listId": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "campaignId": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "dailyCreditCap": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 10000
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/leads": {
       "get": {
         "security": [
@@ -10660,6 +11057,18 @@
                       }
                     ]
                   },
+                  "region": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "plValue": {
                     "anyOf": [
                       {
@@ -10937,6 +11346,18 @@
                     ]
                   },
                   "country": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "region": {
                     "anyOf": [
                       {
                         "type": "string",
@@ -11322,6 +11743,28 @@
             }
           }
         },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/leads/capacity": {
+      "get": {
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-role": "VIEWER",
+        "x-scope": "leads:read",
         "responses": {
           "200": {
             "description": "OK",
@@ -12356,6 +12799,193 @@
         }
       }
     },
+    "/settings/apollo": {
+      "get": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "apiKey": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "apiKey"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/settings/hubspot": {
+      "get": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "put": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  },
+                  "pipelineId": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100
+                  },
+                  "stageMap": {
+                    "type": "object",
+                    "propertyNames": {
+                      "type": "string"
+                    },
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "pipelineId",
+                  "stageMap"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
+    "/settings/hubspot/pipelines": {
+      "post": {
+        "security": [
+          {
+            "session": []
+          }
+        ],
+        "x-role": "ADMIN",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "type": "object",
+                "properties": {
+                  "token": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/settings/verifier": {
       "get": {
         "security": [
@@ -12426,6 +13056,24 @@
                       "kind",
                       "url",
                       "statusPath"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "millionverifier"
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "kind"
                     ],
                     "additionalProperties": false
                   }
@@ -12607,6 +13255,13 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "slack"
+                    ]
                   }
                 },
                 "required": [
@@ -12739,6 +13394,13 @@
                       {
                         "type": "null"
                       }
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "slack"
                     ]
                   }
                 },

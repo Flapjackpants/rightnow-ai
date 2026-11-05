@@ -10,12 +10,13 @@ import { decrypt, encrypt } from "../crypto";
 import { isLeadKey } from "./payload";
 import { postWebhook } from "./deliver";
 import { LEADLESS_EVENTS, REPLY_EVENTS, WEBHOOK_EVENTS } from "./events";
+import { isSlackUrl, SLACK_URL_MASK } from "./slack";
 
 type Db = PrismaClient | Prisma.TransactionClient;
 type Actor = string | null | undefined;
 /** `scopes` is set when an API key calls (I3). */
 type Caller = { scopes?: string[] };
-export type ApiWebhook = Omit<Webhook, "secretEnc" | "headersEnc"> & {
+export type ApiWebhook = Omit<Webhook, "secretEnc" | "headersEnc" | "urlEnc"> & {
   hasSecret: true;
   headerNames: string[];
 };
@@ -43,6 +44,7 @@ export const webhookInput = z.strictObject({
   events: z.array(z.string().min(1).max(100)).min(1).max(50),
   campaignId: z.string().min(1).max(100).nullish(),
   headers: headers.nullish(),
+  format: z.enum(["json", "slack"]).optional(),
 });
 type Input = z.output<typeof webhookInput>;
 
@@ -58,7 +60,12 @@ const toApi = (w: Webhook, headerNames: string[]): ApiWebhook => {
   const out: Partial<Webhook> = { ...w };
   delete out.secretEnc;
   delete out.headersEnc;
-  return { ...(out as Omit<Webhook, "secretEnc" | "headersEnc">), hasSecret: true, headerNames };
+  delete out.urlEnc;
+  return {
+    ...(out as Omit<Webhook, "secretEnc" | "headersEnc" | "urlEnc">),
+    hasSecret: true,
+    headerNames,
+  };
 };
 /** Header names only: the values may carry credentials and are never returned. */
 const names = (h: Webhook) =>
@@ -138,6 +145,10 @@ export async function createWebhook(
   c: Caller = {},
 ): Promise<ApiWebhook & { secret: string }> {
   const d = parse(webhookInput, input);
+  if (d.format === "slack") {
+    if (!isSlackUrl(d.url)) throw bad("invalid_slack_url");
+    if (d.headers && Object.keys(d.headers).length) throw bad("headers_not_allowed");
+  }
   await checkRefs(prisma, ws, d, c);
   await checkUrl(d.url, env);
   const secret = newSecret();
@@ -146,7 +157,9 @@ export async function createWebhook(
       data: {
         workspaceId: ws,
         name: d.name ?? null,
-        url: d.url,
+        url: d.format === "slack" ? SLACK_URL_MASK : d.url,
+        urlEnc: d.format === "slack" ? encrypt(d.url) : null,
+        format: d.format ?? "json",
         events: d.events,
         campaignId: d.campaignId ?? null,
         secretEnc: encrypt(secret),
@@ -175,6 +188,12 @@ export async function updateWebhook(
   const p = parse(webhookInput.partial(), input);
   const cur = await prisma.webhook.findFirst({ where: { id, workspaceId: ws } });
   if (!cur) throw notFound();
+  if (p.format !== undefined && p.format !== cur.format) throw bad("format_fixed");
+  if (cur.format === "slack") {
+    if (p.headers && Object.keys(p.headers).length) throw bad("headers_not_allowed");
+    if (p.url !== undefined && p.url !== SLACK_URL_MASK && !isSlackUrl(p.url))
+      throw bad("invalid_slack_url");
+  }
   await checkRefs(
     prisma,
     ws,
@@ -186,19 +205,24 @@ export async function updateWebhook(
   );
   // I3: stored headers may carry the old receiver's credentials; a new origin gets new ones (or `headers: null`)
   if (
+    cur.format !== "slack" &&
     p.url !== undefined &&
     p.headers === undefined &&
     cur.headersEnc &&
     new URL(p.url).origin !== new URL(cur.url).origin
   )
     throw bad("headers_required");
-  if (p.url !== undefined) await checkUrl(p.url, env);
+  if (p.url !== undefined && !(cur.format === "slack" && p.url === SLACK_URL_MASK))
+    await checkUrl(p.url, env);
   return prisma.$transaction(async (tx) => {
     const r = await tx.webhook.updateMany({
       where: { id, workspaceId: ws },
       data: {
         ...(p.name !== undefined && { name: p.name }),
-        ...(p.url !== undefined && { url: p.url }),
+        ...(p.url !== undefined && cur.format !== "slack" && { url: p.url }),
+        ...(p.url !== undefined &&
+          cur.format === "slack" &&
+          p.url !== SLACK_URL_MASK && { urlEnc: encrypt(p.url) }),
         ...(p.events !== undefined && { events: p.events }),
         ...(p.campaignId !== undefined && { campaignId: p.campaignId }),
         ...(p.headers !== undefined && {

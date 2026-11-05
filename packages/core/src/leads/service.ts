@@ -51,6 +51,7 @@ const fields = {
   source: opt(200),
   lawfulBasis: opt(200),
   country: opt(100),
+  region: opt(100),
   plValue: z.number().nonnegative().max(1e12).nullable(),
 };
 export const createLeadInput = z
@@ -71,7 +72,15 @@ const PUBLIC = [
     "lastSenderAccountId",
     "lastEngagement",
   ],
-  ...["mergedIntoId", "createdAt", "updatedAt", "deletedAt", "importJobId", ...Object.keys(fields)],
+  ...[
+    "mergedIntoId",
+    "referredById",
+    "createdAt",
+    "updatedAt",
+    "deletedAt",
+    "importJobId",
+    ...Object.keys(fields),
+  ],
 ];
 export type ApiLead = Omit<Lead, "workspaceId" | "plValue"> & { plValue: number | null };
 /** Allowlist serializer: only listed columns leave the service (plValue as a number). */
@@ -162,7 +171,14 @@ export async function createLead(
 }
 
 export async function getLead(prisma: Db, ws: string, id: string) {
-  return toApiLead(await liveLead(prisma, ws, id));
+  const lead = await liveLead(prisma, ws, id);
+  const referredBy = lead.referredById
+    ? await prisma.lead.findFirst({
+        where: { id: lead.referredById, workspaceId: ws, deletedAt: null },
+        select: { id: true, email: true },
+      })
+    : null;
+  return { ...toApiLead(lead), referredBy };
 }
 
 /**
@@ -553,7 +569,14 @@ export async function gdprDeleteLead(
 const FILL = [
   ...["firstName", "lastName", "companyName", "companyDomain", "jobTitle", "website", "industry"],
   ...["phone", "personalization", "esg", "enrichmentStatus", "plValue", "ownerId", "source"],
-  ...["lawfulBasis", "country", "interestStatus", "lastSenderAccountId", "lastEngagement"],
+  ...[
+    "lawfulBasis",
+    "country",
+    "region",
+    "interestStatus",
+    "lastSenderAccountId",
+    "lastEngagement",
+  ],
 ] as const;
 const LATEST = [
   ...["lastContactedAt", "lastOpenAt", "lastReplyAt", "lastClickAt", "lastTouchAt"],
@@ -644,6 +667,15 @@ export async function mergeLeads(
       await tx.event.updateMany(repoint);
       await tx.opportunity.updateMany(repoint);
       await tx.task.updateMany(repoint);
+      await tx.lead.updateMany({
+        where: { workspaceId: ws, referredById: mergeId, id: { not: keepId } },
+        data: { referredById: keepId },
+      });
+      if (keep.referredById === null || keep.referredById === mergeId) {
+        const ref = from.referredById && from.referredById !== keepId ? from.referredById : null;
+        if (ref !== keep.referredById)
+          await tx.lead.update({ where: { id: keepId }, data: { referredById: ref } });
+      }
       await tx.lead.update({
         where: { id: mergeId },
         data: { deletedAt: clock.now(), mergedIntoId: keepId },

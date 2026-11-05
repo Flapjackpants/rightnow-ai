@@ -46,6 +46,7 @@ export type Hook = {
   id: string;
   name: string | null;
   url: string;
+  format: "json" | "slack";
   events: string[];
   campaignId: string | null;
   status: "ACTIVE" | "ERROR";
@@ -214,6 +215,7 @@ export function WebhooksTab({
                 <tr key={h.id} data-stripe={h.status === "ERROR" ? "danger" : undefined}>
                   <td className="max-w-72 py-2.5">
                     <div className="truncate font-medium">{label(h)}</div>
+                    {h.format === "slack" && <span className={chipClass}>Slack</span>}
                     {h.name && (
                       <div className="truncate font-mono text-xs text-fg-subtle" title={h.url}>
                         {h.url}
@@ -360,6 +362,7 @@ function HookForm({
 }) {
   const [name, setName] = useState(hook?.name ?? "");
   const [url, setUrl] = useState(hook?.url ?? "");
+  const [format, setFormat] = useState<"json" | "slack">(hook?.format ?? "json");
   const [chosen, setChosen] = useState(hook?.events ?? []);
   const [campaignId, setCampaignId] = useState(hook?.campaignId ?? "");
   // header values are never returned, so on edit they are replaced only when asked
@@ -382,15 +385,24 @@ function HookForm({
       url: url.trim(),
       events: chosen,
       campaignId: campaignId || null,
-      ...(replace && { headers: Object.keys(headers).length ? headers : null }),
+      ...(!hook && { format }),
+      ...(format === "json" &&
+        replace && { headers: Object.keys(headers).length ? headers : null }),
     };
     const r = await call(
       hook ? `/api/v1/webhooks/${hook.id}` : "/api/v1/webhooks",
       hook ? "PATCH" : "POST",
       body,
     );
-    if (!r.ok) return setError(why(r));
-    onSaved(hook ? undefined : { name: name.trim() || url.trim(), value: String(r.json.secret) });
+    if (!r.ok)
+      return setError(
+        why(r) === "invalid_slack_url" ? "Enter a hooks.slack.com/services URL." : why(r),
+      );
+    onSaved(
+      hook || format === "slack"
+        ? undefined
+        : { name: name.trim() || url.trim(), value: String(r.json.secret) },
+    );
   }
 
   return (
@@ -404,6 +416,18 @@ function HookForm({
           {hook ? "Edit webhook" : "New webhook"}
         </h2>
         <Err text={error} />
+        <div className="flex flex-col gap-1.5 self-start">
+          <Label htmlFor="hook-format">Format</Label>
+          <Select
+            id="hook-format"
+            value={format}
+            disabled={!!hook}
+            onChange={(e) => setFormat(e.target.value as "json" | "slack")}
+          >
+            <option value="json">Standard signed JSON</option>
+            <option value="slack">Slack</option>
+          </Select>
+        </div>
         <div className="flex flex-wrap gap-3">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="hook-name">Name</Label>
@@ -425,6 +449,11 @@ function HookForm({
               value={url}
               onChange={(e) => setUrl(e.target.value)}
             />
+            {format === "slack" && (
+              <p className="text-xs text-fg-muted">
+                Paste the Incoming Webhook URL from Slack. It is stored encrypted.
+              </p>
+            )}
           </div>
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="hook-campaign">Campaign</Label>
@@ -453,67 +482,69 @@ function HookForm({
             ))}
           </div>
         </fieldset>
-        <fieldset className="flex flex-col gap-2 rounded-md border border-border p-3">
-          <legend className="micro px-1 text-fg-muted">Custom headers</legend>
-          {hook && (
-            <label className="flex items-center gap-2 text-[13px]/[18px]">
-              <input
-                type="checkbox"
-                checked={replace}
-                onChange={(e) => setReplace(e.target.checked)}
-              />
-              Replace the stored headers
-              {hook.headerNames.length
-                ? ` (${hook.headerNames.join(", ")}; values are not shown)`
-                : ""}
-            </label>
-          )}
-          {replace && (
-            <>
-              {rows.map((r, i) => (
-                <div key={i} className="flex flex-wrap items-end gap-2">
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={`hdr-k-${i}`}>Header name {i + 1}</Label>
-                    <Input
-                      id={`hdr-k-${i}`}
-                      maxLength={64}
-                      value={r.k}
-                      onChange={(e) => setRow(i, { k: e.target.value })}
-                    />
+        {format === "json" && (
+          <fieldset className="flex flex-col gap-2 rounded-md border border-border p-3">
+            <legend className="micro px-1 text-fg-muted">Custom headers</legend>
+            {hook && (
+              <label className="flex items-center gap-2 text-[13px]/[18px]">
+                <input
+                  type="checkbox"
+                  checked={replace}
+                  onChange={(e) => setReplace(e.target.checked)}
+                />
+                Replace the stored headers
+                {hook.headerNames.length
+                  ? ` (${hook.headerNames.join(", ")}; values are not shown)`
+                  : ""}
+              </label>
+            )}
+            {replace && (
+              <>
+                {rows.map((r, i) => (
+                  <div key={i} className="flex flex-wrap items-end gap-2">
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`hdr-k-${i}`}>Header name {i + 1}</Label>
+                      <Input
+                        id={`hdr-k-${i}`}
+                        maxLength={64}
+                        value={r.k}
+                        onChange={(e) => setRow(i, { k: e.target.value })}
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <Label htmlFor={`hdr-v-${i}`}>Header value {i + 1}</Label>
+                      <Input
+                        id={`hdr-v-${i}`}
+                        maxLength={1024}
+                        value={r.v}
+                        onChange={(e) => setRow(i, { v: e.target.value })}
+                      />
+                    </div>
+                    <Button
+                      type="button"
+                      variant="danger-ghost"
+                      aria-label={`Remove header ${i + 1}`}
+                      onClick={() => setRows((x) => x.filter((_, j) => j !== i))}
+                    >
+                      Remove
+                    </Button>
                   </div>
-                  <div className="flex flex-col gap-1.5">
-                    <Label htmlFor={`hdr-v-${i}`}>Header value {i + 1}</Label>
-                    <Input
-                      id={`hdr-v-${i}`}
-                      maxLength={1024}
-                      value={r.v}
-                      onChange={(e) => setRow(i, { v: e.target.value })}
-                    />
-                  </div>
+                ))}
+                <div>
                   <Button
                     type="button"
-                    variant="danger-ghost"
-                    aria-label={`Remove header ${i + 1}`}
-                    onClick={() => setRows((x) => x.filter((_, j) => j !== i))}
+                    variant="ghost"
+                    size="sm"
+                    disabled={rows.length >= 10}
+                    onClick={() => setRows((x) => [...x, { k: "", v: "" }])}
                   >
-                    Remove
+                    Add header
                   </Button>
                 </div>
-              ))}
-              <div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  disabled={rows.length >= 10}
-                  onClick={() => setRows((x) => [...x, { k: "", v: "" }])}
-                >
-                  Add header
-                </Button>
-              </div>
-            </>
-          )}
-        </fieldset>
+              </>
+            )}
+          </fieldset>
+        )}
         <div className="flex justify-end gap-2 border-t border-border pt-4">
           <Button type="button" variant="ghost" onClick={onCancel}>
             Cancel

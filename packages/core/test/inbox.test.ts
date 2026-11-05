@@ -10,6 +10,7 @@ import { classify } from "../src/mail/classify";
 import {
   attachLead,
   bulkThreads,
+  createLeadFromThread,
   deleteThread,
   getThread,
   listThreads,
@@ -66,9 +67,10 @@ type ThreadOpts = {
   subject?: string;
   at?: Date;
   inbound?: boolean;
-  kind?: "REPLY" | "BOUNCE";
+  kind?: "REPLY" | "BOUNCE" | "COMPLAINT";
   text?: string;
   from?: string;
+  fromName?: string | null;
   out?: boolean;
 } & Partial<Prisma.ThreadUncheckedCreateInput>;
 
@@ -82,6 +84,7 @@ async function thread(ws: string, a: EmailAccount, o: ThreadOpts = {}) {
     kind = "REPLY",
     text,
     from,
+    fromName,
     out,
     at: when,
     ...rest
@@ -115,6 +118,7 @@ async function thread(ws: string, a: EmailAccount, o: ThreadOpts = {}) {
         direction: "IN",
         folder: "INBOX",
         fromEmail: from ?? "someone@x.test",
+        fromName: fromName ?? null,
         to: [a.email],
         cc: [],
         kind,
@@ -155,6 +159,7 @@ describe("views and filters", () => {
 
     expect(await view("primary")).toEqual(ids([primary]));
     expect(await view("others")).toEqual(ids([stranger, bounce, deletedLead]));
+    expect(await view("triage")).toEqual(ids([stranger, deletedLead]));
     expect(await view("unread")).toEqual(ids([primary]));
     expect(await view("reminders")).toEqual(ids([stranger]));
     expect(await view("sent")).toEqual(ids([sentOnly]));
@@ -263,13 +268,31 @@ describe("state changes", () => {
     expect(await unreadCount(P(), ws, T)).toEqual({
       primary: 2,
       others: 1,
+      triage: 1,
       total: 3,
       remindersDue: 1,
     });
     // PS-INBOX-23: only that thread, never the lead's other threads
     expect(await readAll(P(), ws, p1.id)).toEqual({ updated: 1 });
-    expect(await unreadCount(P(), ws, T)).toMatchObject({ primary: 1, others: 1, total: 2 });
+    expect(await unreadCount(P(), ws, T)).toMatchObject({
+      primary: 1,
+      others: 1,
+      triage: 1,
+      total: 2,
+    });
     await expect(readAll(P(), ws, "nope")).rejects.toMatchObject({ status: 404 });
+  });
+
+  test("the triage count ignores reports, lead threads and read threads", async () => {
+    const { ws, a } = await world();
+    const l = await lead(ws);
+    await thread(ws, a, { isRead: false });
+    await thread(ws, a, { isRead: false });
+    await thread(ws, a, { leadId: l.id, isRead: false });
+    await thread(ws, a, { kind: "BOUNCE", isRead: false });
+    await thread(ws, a, { kind: "COMPLAINT", isRead: false });
+    await thread(ws, a, { isRead: true });
+    expect(await unreadCount(P(), ws, T)).toMatchObject({ triage: 2, total: 5 });
   });
 
   test("getThread inlines small cid images as data URIs, drops the rest, and names the step and variant", async () => {
@@ -396,7 +419,11 @@ describe("state changes", () => {
       );
     });
     // FR M3 / D20: a MEMBER (or API key) changes the category, but only an ADMIN lifts the suppression
-    const m = await thread(ws, a, { leadId: l.id, category: "NOT_INTERESTED", categorySource: "RULE" });
+    const m = await thread(ws, a, {
+      leadId: l.id,
+      category: "NOT_INTERESTED",
+      categorySource: "RULE",
+    });
     expect(await updateThread(P(), ws, "u2", m.id, { category: "NEUTRAL" })).toMatchObject({
       category: "NEUTRAL",
     });
@@ -530,6 +557,170 @@ describe("lead attachment and Others", () => {
   });
 });
 
+describe("createLeadFromThread", () => {
+  test("a display name longer than the lead fields is cut, not refused", async () => {
+    const { ws, a } = await world();
+    const t = await thread(ws, a, {
+      from: "long@acme.test",
+      fromName: `${"f".repeat(150)} ${"l".repeat(150)}`,
+    });
+    const r = await createLeadFromThread(P(), clock, ws, "u1", t.id);
+    expect(await P().lead.findUniqueOrThrow({ where: { id: r.leadId } })).toMatchObject({
+      firstName: "f".repeat(100),
+      lastName: "l".repeat(100),
+    });
+  });
+
+  test("a stranger's reply becomes a lead attached to the thread, with no enrollment", async () => {
+    const { ws, a } = await world();
+    const t = await thread(ws, a, { from: "dana@acme.test", fromName: "Dana Smith" });
+    expect(ids(await listThreads(P(), ws))).toHaveLength(0); // still in Others
+
+    const r = await createLeadFromThread(P(), clock, ws, "u1", t.id);
+
+    expect(r.created).toBe(true);
+    const l = await P().lead.findUniqueOrThrow({ where: { id: r.leadId } });
+    expect(l).toMatchObject({
+      email: "dana@acme.test",
+      firstName: "Dana",
+      lastName: "Smith",
+      source: "inbox_triage",
+      companyDomain: "acme.test",
+    });
+    expect(ids(await listThreads(P(), ws))).toEqual([t.id]); // moved to Primary
+    expect(await P().campaignLead.count({ where: { workspaceId: ws, leadId: l.id } })).toBe(0);
+    expect(
+      await P().auditLog.count({ where: { workspaceId: ws, action: "inbox.attach_lead" } }),
+    ).toBe(1);
+  });
+
+  test("a live lead with that address is reused, and a second call is refused", async () => {
+    const { ws, a } = await world();
+    const known = await lead(ws, { email: "known@acme.test" });
+    const t = await thread(ws, a, { from: "known@acme.test" });
+    expect(await createLeadFromThread(P(), clock, ws, "u1", t.id)).toEqual({
+      leadId: known.id,
+      created: false,
+    });
+    expect(await P().lead.count({ where: { workspaceId: ws, email: "known@acme.test" } })).toBe(1);
+    await expect(createLeadFromThread(P(), clock, ws, "u1", t.id)).rejects.toMatchObject({
+      status: 409,
+      message: "lead_attached",
+    });
+  });
+
+  test("bounce reports and unsubscribes have no person to add", async () => {
+    const { ws, a } = await world();
+    const t = await thread(ws, a, { kind: "BOUNCE", from: "dana@acme.test" });
+    await expect(createLeadFromThread(P(), clock, ws, "u1", t.id)).rejects.toMatchObject({
+      status: 400,
+      message: "not_a_person",
+    });
+    const noInbound = await thread(ws, a, { inbound: false, out: true });
+    await expect(createLeadFromThread(P(), clock, ws, "u1", noInbound.id)).rejects.toMatchObject({
+      status: 400,
+      message: "not_a_person",
+    });
+    expect(await P().lead.count({ where: { workspaceId: ws } })).toBe(0);
+  });
+
+  test("a suppressed address or domain is never recreated", async () => {
+    const { ws, a } = await world();
+    await P().$transaction((tx) =>
+      suppress(tx, ws, [{ kind: "EMAIL", value: "spam@blocked.test" }], "NOT_INTERESTED", "status"),
+    );
+    const t = await thread(ws, a, { from: "spam@blocked.test" });
+    await expect(createLeadFromThread(P(), clock, ws, "u1", t.id)).rejects.toMatchObject({
+      status: 409,
+      message: "suppressed",
+    });
+    const o = await world();
+    await P().$transaction((tx) =>
+      suppress(tx, o.ws, [{ kind: "DOMAIN", value: "blocked.test" }], "NOT_INTERESTED", "status"),
+    );
+    const d = await thread(o.ws, o.a, { from: "anyone@blocked.test" });
+    await expect(createLeadFromThread(P(), clock, o.ws, "u1", d.id)).rejects.toMatchObject({
+      status: 409,
+      message: "suppressed",
+    });
+    expect(await P().lead.count({ where: { workspaceId: ws } })).toBe(0);
+    expect(await P().lead.count({ where: { workspaceId: o.ws } })).toBe(0);
+  });
+
+  test("another workspace's thread is not found", async () => {
+    const mine = await world();
+    const other = await world();
+    const t = await thread(other.ws, other.a, { from: "dana@acme.test" });
+    await expect(createLeadFromThread(P(), clock, mine.ws, "u1", t.id)).rejects.toMatchObject({
+      status: 404,
+    });
+    expect(await P().lead.count({ where: { workspaceId: mine.ws } })).toBe(0);
+  });
+
+  test("a display name containing an address leaves the names empty", async () => {
+    const { ws, a } = await world();
+    const t = await thread(ws, a, {
+      from: "dana@acme.test",
+      fromName: "Dana <dana@acme.test>",
+    });
+    const r = await createLeadFromThread(P(), clock, ws, "u1", t.id);
+    expect(await P().lead.findUniqueOrThrow({ where: { id: r.leadId } })).toMatchObject({
+      firstName: null,
+      lastName: null,
+    });
+  });
+});
+
+describe("same-domain suggestions", () => {
+  test("getThread lists up to five live leads of the sender's company, newest contact first", async () => {
+    const { ws, a } = await world();
+    const other = await world();
+    const live = (email: string, lastContactedAt: Date | null = null, o = {}) =>
+      lead(ws, { email, companyDomain: "acme.test", lastContactedAt, ...o });
+    const recent = await live("a@acme.test", at(-1 * DAY));
+    const second = await live("b@acme.test", at(-2 * DAY));
+    const third = await live("c@acme.test", at(-3 * DAY));
+    const older = await live("d@acme.test", at(-4 * DAY));
+    const never = await live("e@acme.test");
+    await live("gone@acme.test", at(-1000), { deletedAt: T });
+    await lead(other.ws, { email: "x@acme.test", companyDomain: "acme.test" });
+    const t = await thread(ws, a, { from: "stranger@acme.test" });
+
+    const got = await getThread(P(), ws, t.id);
+    expect(got.domainLeads.map((l) => l.id)).toEqual([
+      recent.id,
+      second.id,
+      third.id,
+      older.id,
+      never.id,
+    ]);
+    const more = await live("f@acme.test", at(-5 * DAY));
+    const capped = await getThread(P(), ws, t.id);
+    expect(capped.domainLeads).toHaveLength(5);
+    expect(capped.domainLeads.map((l) => l.id)).toContain(more.id);
+    expect(capped.domainLeads.map((l) => l.id)).not.toContain(never.id); // the oldest contact falls off
+  });
+
+  test("free-mail senders, sent-only threads and a linked lead get no suggestions", async () => {
+    const { ws, a } = await world();
+    await lead(ws, { email: "someone@gmail.com", companyDomain: null });
+    await lead(ws, { email: "colleague@acme.test", companyDomain: "acme.test" });
+    const free = await thread(ws, a, { from: "someone@gmail.com" });
+    expect((await getThread(P(), ws, free.id)).domainLeads).toEqual([]);
+    const sent = await thread(ws, a, { from: "stranger@acme.test", inbound: false, out: true });
+    expect((await getThread(P(), ws, sent.id)).domainLeads).toEqual([]);
+    const linked = await lead(ws, { email: "stranger@acme.test" });
+    const t = await thread(ws, a, { from: "stranger@acme.test", leadId: linked.id });
+    expect((await getThread(P(), ws, t.id)).domainLeads).toEqual([]);
+    // a deleted lead is no live link, so the suggestions come back
+    const gone = await lead(ws, { email: "gone@acme.test", deletedAt: T });
+    const u = await thread(ws, a, { from: "gone@acme.test", leadId: gone.id });
+    expect((await getThread(P(), ws, u.id)).domainLeads.map((l) => l.email)).toEqual([
+      "colleague@acme.test",
+    ]);
+  });
+});
+
 describe("bulk", () => {
   test("blocklist suppresses the senders but never our own mailbox; read, unread, delete by ids and by filter", async () => {
     const { ws, a } = await world();
@@ -621,5 +812,24 @@ describe("notes, macros and erasure (I11)", () => {
     await expect(createMacro(P(), ws, "u1", { name: "hi", body: "again" })).rejects.toMatchObject({
       status: 409,
     });
+  });
+
+  test("owner variables render for a member and stay empty without an owner", async () => {
+    const { ws, a } = await world();
+    const l = await lead(ws, { firstName: "Dana" });
+    const t = await thread(ws, a, { leadId: l.id });
+    const m = await createMacro(P(), ws, "u1", {
+      name: "owner",
+      body: "{{ownerName}} / {{ownerEmail}}",
+    });
+    expect((await renderMacro(P(), ws, m.id, t.id)).text).toBe(" / ");
+    const u = await P().user.create({
+      data: { id: `owner-${t.id}`, name: "Alex", email: `alex-${t.id}@x.io` },
+    });
+    await P().member.create({
+      data: { id: `member-${t.id}`, workspaceId: ws, userId: u.id, role: "member" },
+    });
+    await P().lead.update({ where: { id: l.id }, data: { ownerId: u.id } });
+    expect((await renderMacro(P(), ws, m.id, t.id)).text).toBe(`Alex / ${u.email}`);
   });
 });

@@ -1,0 +1,1 @@
+ALTER TABLE "AutomationRule" ADD COLUMN "assignCursor" INTEGER NOT NULL DEFAULT 0;

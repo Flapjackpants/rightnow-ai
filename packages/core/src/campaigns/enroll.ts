@@ -2,6 +2,7 @@ import type { Prisma, PrismaClient } from "@rightnow/db/client";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
 import { leadQuery, leadWhere, type LeadQuery } from "../leads/service";
+import { regionExcluded } from "../leads/regions";
 import { suppressedEmails } from "../leads/suppression";
 import { withTxRetry } from "../dispatch";
 import { enterSubsequence, subsequenceUsed } from "../planner";
@@ -19,12 +20,14 @@ export type EnrollSkips = {
   already_in_campaign: number;
   suppressed: number;
   deleted: number;
+  excluded_region: number;
 };
 export const noSkips = (): EnrollSkips => ({
   in_other_active_campaign: 0,
   already_in_campaign: 0,
   suppressed: 0,
   deleted: 0,
+  excluded_region: 0,
 });
 
 /**
@@ -41,10 +44,14 @@ export async function enrollBatch(
   skipped: EnrollSkips,
 ): Promise<number> {
   await lockEnrollment(tx, ws);
+  const rules = await tx.workspace.findUniqueOrThrow({
+    where: { id: ws },
+    select: { excludedCountries: true, excludedRegions: true },
+  });
   const ids = [...new Set(leadIds)];
   const leads = await tx.lead.findMany({
     where: { id: { in: ids }, workspaceId: ws, deletedAt: null },
-    select: { id: true, email: true },
+    select: { id: true, email: true, country: true, region: true },
   });
   skipped.deleted += ids.length - leads.length;
   const [there, blocked, others] = await Promise.all([
@@ -72,6 +79,7 @@ export async function enrollBatch(
   for (const l of leads) {
     if (inThis.has(l.id)) skipped.already_in_campaign++;
     else if (blocked.has(l.email)) skipped.suppressed++;
+    else if (regionExcluded(l, rules)) skipped.excluded_region++;
     else if (inOther.has(l.id)) skipped.in_other_active_campaign++;
     else take.push(l.id);
   }

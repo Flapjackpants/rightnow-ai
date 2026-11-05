@@ -11,6 +11,7 @@ const BY_TYPE: Partial<Record<EventType, string>> = {
   UNSUBSCRIBE: "lead_unsubscribed",
   ACCOUNT_ERROR: "account_error",
   CAMPAIGN_COMPLETED: "campaign_completed",
+  ESCALATION_OVERDUE: "escalation_overdue",
   DEAL_WON: "deal_won",
   DEAL_LOST: "deal_lost",
   QUOTA_REACHED: "quota_reached",

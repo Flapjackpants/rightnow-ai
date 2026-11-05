@@ -41,6 +41,7 @@ const FIELDS: { k: string; label: string; kind: Kind; hint?: string }[] = [
   { k: "prioritizeNewLeads", label: "Prioritize new leads", kind: "bool" },
   { k: "matchProvider", label: "Match lead's email provider", kind: "bool" },
   { k: "allowRisky", label: "Email risky addresses", kind: "bool" },
+  { k: "allowCatchAll", label: "Email catch-all addresses", kind: "bool" },
   { k: "bounceProtect", label: "Bounce protection", kind: "bool" },
   { k: "unsubscribeLink", label: "Include unsubscribe link in the footer", kind: "bool" },
   { k: "optOutText", label: "Opt-out message", kind: "text" },
@@ -78,7 +79,7 @@ const GROUPS: [string, string[]][] = [
   ["Tracking", ["trackOpens", "trackClicks"]],
   ["Content", ["textOnly", "firstEmailTextOnly", "unsubscribeLink", "optOutText"]],
   ["A/B", ["abAutoOptimize", "abWinnerMetric", "abResetDaily"]],
-  ["Other", ["name", "tags", "cc", "bcc", "evergreen", "allowRisky", "plValue"]],
+  ["Other", ["name", "tags", "cc", "bcc", "evergreen", "allowRisky", "allowCatchAll", "plValue"]],
 ];
 const HELP: Record<string, string> = {
   trackOpens: "Opens are estimated: image blocking and privacy proxies distort them.",

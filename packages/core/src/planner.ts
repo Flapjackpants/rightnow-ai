@@ -17,6 +17,7 @@ import { cancelRows, editHooks, stopLead } from "./campaigns/hooks";
 import { campaignVariables } from "./campaigns/sequence";
 import { accountOk, withTxRetry } from "./dispatch";
 import { getEnv } from "./env";
+import { regionExcluded } from "./leads/regions";
 import { suppressedEmails } from "./leads/suppression";
 import { recordEvent } from "./mail/events";
 import type { EspRule } from "./campaigns/schema";
@@ -523,10 +524,13 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
         ? "SKIPPED"
         : blocked.has(lead.email)
           ? "SUPPRESSED"
-          : lead.verificationStatus === "INVALID" ||
-              (!c.allowRisky && ["RISKY", "CATCH_ALL"].includes(lead.verificationStatus))
+          : regionExcluded(lead, w)
             ? "SKIPPED"
-            : null;
+            : lead.verificationStatus === "INVALID" ||
+                (lead.verificationStatus === "RISKY" && !c.allowRisky) ||
+                (lead.verificationStatus === "CATCH_ALL" && !c.allowCatchAll)
+              ? "SKIPPED"
+              : null;
       if (stop) {
         await stopLead(tx, cl.id, stop, now);
         continue;

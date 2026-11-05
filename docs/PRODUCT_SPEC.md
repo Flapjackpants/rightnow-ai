@@ -445,14 +445,28 @@ Instantly has no dedicated reactivation product: users lower limits manually, re
 
 ---
 
+## Phase 9 additions
+
+- Apollo lead sourcing through your own account.
+- MillionVerifier email verification and catch-all handling.
+- Lead capacity limits for automated loads.
+- Inbox triage for messages from non-leads.
+- Customer and region exclusions.
+- Referrals detected from fresh replies.
+- Slack webhook alerts.
+- Lead assignment and auto-forward handoffs.
+- Re-alerts for unanswered escalations.
+- One-way HubSpot sync.
+- External warm-up service guidance; built-in warm-up remains internal.
+
 ## 19. Known limitations / not reproducible
 
 1. **Instantly's warm-up pool.** Instantly warm-up exchanges mail with other participating mailboxes; the pool, its sizing, selection and reply behavior are private (S2). rightnow cannot reproduce it. Replacement: gradual volume ramp, optional opted-in peer mailboxes owned by the same user, and optional external providers via an interface. No warm-up can guarantee inbox placement.
 2. **Fake-human signals.** Read emulation via headless browsers, forced "mark important", automatic spam rescue at configurable percentages exist in Instantly (S2). rightnow only performs these on mailboxes the user owns and has opted in, and labels them as test traffic; it does not inflate customer engagement metrics.
 3. **Warm-up health score formula** is undocumented (S4 exposes only `stat_warmup_score`). rightnow's score is its own transparent formula and not comparable to Instantly's.
 4. **AirMail, DFY mailboxes, pre-warmed domains, domain purchase/forwarding** (S23) depend on Instantly infrastructure. Out of scope.
-5. **SuperSearch / Lead Finder / AI enrichment / company lists / website visitors** use Instantly's data. Out of scope; only hook interfaces for external enrichment and verification.
-6. **Built-in email verification** (0.25 credit/lead, S27) depends on Instantly's verifier. rightnow ships syntax/MX/disposable checks plus a provider hook.
+5. **SuperSearch / Lead Finder / AI enrichment / company lists / website visitors** use Instantly's own data, which remains out of scope. rightnow can load leads through your own Apollo account (Phase 9).
+6. **Built-in email verification** (0.25 credit/lead, S27) depends on Instantly's verifier. rightnow ships syntax/MX/disposable checks plus a provider hook, and supports MillionVerifier through your own account.
 7. **AI Sales Agent, AI Inbox Manager, AI Deliverability Agent** (S23) are autonomous agents. Only optional, human-reviewed AI is in scope.
 8. **Tracking-pixel opens and clicks during downtime** are lost: opens/clicks that occur while the tracking domain or server is offline cannot be reconstructed. Replies, bounces, unsubscribes, sent mail are reconstructible from provider mailboxes.
 9. **Open tracking is inherently an estimate.** Apple MPP, security scanners and image proxies create false opens; text-only mail cannot register opens. Reply and click-with-human-timing are stronger signals. Instantly's public pages do not describe bot filtering (S17).

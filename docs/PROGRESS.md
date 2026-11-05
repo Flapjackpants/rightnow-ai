@@ -11,6 +11,7 @@
 | 6 CRM & analytics | done |
 | 7 Advanced features | done |
 | 8 Final verification | done |
+| 9 Pipeline integrations | built on branch; not merged |
 
 ## Log
 - 2026-10-19: Repo inspected; Superpowers 7.0.0 and Ponytail 5.3.2 verified installed; push access verified;
@@ -25,3 +26,5 @@
 - 2026-10-24: Phase 7 complete: automations + outbound webhooks (signed, outbox, per-webhook cap), AI features (provider-agnostic, human approval, suggestions/scoring/drafts), GDPR export/erasure, Gmail watch + Graph push subscriptions, Postgres rate limits + CSP, 2FA/invites/member removal/audit view, a11y pass (axe light + dark), rich-text replies with link-target warnings, P5/P6 carry-forwards. 16 tasks, each independently reviewed (security tasks opus); gate: opus whole-branch review (PASS WITH FIXES) + ponytail audit → fix rounds A/B/C, opus re-reviews. Parity: 310/316 ticked (partial: SYNC-01, WARM-08, WARM-18, SEC-15; deferred: CAMP-14, DEPLOY-11 → P8-T02).
 - 2026-10-24: Resume drill (docs/ops/RESUME_DRILL.md) executed once: dev stack killed mid-task with an uncommitted marker edit; a fresh read-only subagent given "keep going" found the correct next task (P8-T01) and flagged the marker as drill-only. Pass.
 - 2026-10-24: Phase 8 complete: Phase 7 debt fixes, placement-polling e2e + executed resume drill, local-to-VPS migration check in CI (PS-DEPLOY-11), final cross-system review (opus, 3 rounds, verdict READY FOR RELEASE: restore pauses campaigns and D53 settles already-sent steps from synced Sent copies; scope checks; docs/FINAL_ASSESSMENT.md), release legal check (docs/LICENSES.md, NOTICE, CONTRIBUTING with DCO, README responsible use + not-affiliated line, docs/RELEASE_CHECK.md: no GPL/AGPL, no real secret in history). Parity 311/316 (partials SYNC-01, WARM-08, WARM-18, SEC-15; deferred CAMP-14). User decisions open: D17 live verification with real credentials before real-provider sending; lawyer review; rightnow.ai trademark search; LGPL libvips via sharp.
+
+- 2026-11-05: Phase 9 built on branch phase-9-pipeline-integrations, not merged: MillionVerifier, inbox triage, customer and region exclusions, lead capacity, Apollo lead sourcing, referrals, Slack alerts, assignment and auto-forward, escalation re-alerts, HubSpot sync, and external warm-up documentation.
