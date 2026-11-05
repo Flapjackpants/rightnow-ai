@@ -42,6 +42,8 @@ export * from "./leads/esp";
 export * from "./leads/validate";
 export * from "./leads/verify";
 export * from "./leads/capacity";
+export * from "./leads/apollo";
+export * from "./leads/sources";
 export * from "./leads/lists";
 export * from "./leads/timeline";
 export * from "./template";

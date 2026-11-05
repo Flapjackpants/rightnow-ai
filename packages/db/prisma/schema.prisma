@@ -25,6 +25,8 @@ model Workspace {
   leads                Lead[]
   leadLabels           LeadLabel[]
   leadLists            LeadList[]
+  leadSources          LeadSource[]
+  leadSourcesSeen      LeadSourceSeen[]
   suppressions         Suppression[]
   importJobs           ImportJob[]
   campaigns            Campaign[]
@@ -56,6 +58,7 @@ model Workspace {
   verifierKind         String                @default("mx") // "mx" | "http" | "millionverifier" (D38)
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
   aiConfigEnc          String? // encrypted AiConfig {baseUrl, apiKey, model, prices?, classifierEnabled} (D47)
+  apolloConfigEnc      String?
   // PS-CRM-12: false drops inbound replies from non-leads outside known threads (D48)
   storeNonLeadMail     Boolean               @default(true)
   verifierLastError    String? // short reason code of the last verifier failure, never a body or key
@@ -540,8 +543,44 @@ model LeadList {
   name        String
   createdAt   DateTime         @default(now())
   members     LeadListMember[]
+  sources     LeadSource[]
 
   @@unique([workspaceId, name])
+}
+
+model LeadSource {
+  id             String    @id @default(cuid())
+  workspaceId    String
+  workspace      Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name           String
+  enabled        Boolean   @default(true)
+  filters        Json
+  listId         String
+  list           LeadList  @relation(fields: [listId], references: [id], onDelete: Cascade)
+  campaignId     String?
+  lawfulBasis    String
+  dailyCreditCap Int       @default(25)
+  nextPage       Int       @default(1)
+  creditDay      DateTime? @db.Date
+  creditsUsed    Int       @default(0)
+  lastRunAt      DateTime?
+  lastError      String?
+  lastErrorAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([workspaceId, name])
+  @@index([enabled, lastRunAt])
+}
+
+/// One row per Apollo person ever paid for or skipped; holds only the vendor id.
+model LeadSourceSeen {
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  externalId  String
+  createdAt   DateTime  @default(now())
+
+  @@id([workspaceId, externalId])
 }
 
 model LeadListMember {

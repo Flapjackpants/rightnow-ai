@@ -993,7 +993,7 @@
    "id": "P9-T05",
    "phase": 9,
    "title": "Apollo core and job",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T04"
    ],
