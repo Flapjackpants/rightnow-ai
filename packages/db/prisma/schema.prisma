@@ -1339,6 +1339,7 @@ model AutomationRule {
   conditions  Json            @default("{}")
   actions     Json
   position    Int
+  assignCursor Int             @default(0)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
   runs        AutomationRun[]

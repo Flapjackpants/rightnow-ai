@@ -408,6 +408,195 @@ describe("actions", () => {
   });
 });
 
+describe("owner assignment strategies", () => {
+  test("round robin rotates, skips an owned lead, and keeps the cursor", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    const r = await rule(w, "label_added", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    const leads = await Promise.all(
+      Array.from({ length: 5 }, (_, i) =>
+        P().lead.create({
+          data: {
+            workspaceId: w.ws,
+            email: `rotation-${++n}-${i}@test.io`,
+            ...(i === 1 ? { ownerId: b } : {}),
+          },
+        }),
+      ),
+    );
+    for (const lead of leads) await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await drain();
+    expect(
+      (
+        await Promise.all(
+          leads.map((lead) => P().lead.findUniqueOrThrow({ where: { id: lead.id } })),
+        )
+      ).map((lead) => lead.ownerId),
+    ).toEqual([a, b, b, a, b]);
+    expect((await P().automationRule.findUniqueOrThrow({ where: { id: r.id } })).assignCursor).toBe(
+      4,
+    );
+  });
+
+  test("removed members are skipped; no available member fails without assigning", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await rule(w, "label_added", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    await P().member.deleteMany({ where: { workspaceId: w.ws, userId: a } });
+    const lead = await P().lead.create({
+      data: { workspaceId: w.ws, email: `removed-${++n}@test.io` },
+    });
+    await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: lead.id } })).ownerId).toBe(b);
+    await P().member.deleteMany({ where: { workspaceId: w.ws, userId: b } });
+    const other = await P().lead.create({
+      data: { workspaceId: w.ws, email: `removed-${++n}@test.io` },
+    });
+    await ev(w, "LABEL_ADDED", { leadId: other.id });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: other.id } })).ownerId).toBeNull();
+    expect((await runs(w.ws)).find((run) => run.status === "FAILED")?.error).toBe("no_assignee");
+  });
+
+  test("concurrent dispatchers split six leads evenly", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await rule(w, "label_added", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    const leads = await Promise.all(
+      Array.from({ length: 6 }, (_, i) =>
+        P().lead.create({ data: { workspaceId: w.ws, email: `concurrent-${++n}-${i}@test.io` } }),
+      ),
+    );
+    for (const lead of leads) await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await Promise.all([
+      dispatchEvents(client(), clock, { maxMs: 0 }),
+      dispatchEvents(client(), clock, { maxMs: 0 }),
+    ]);
+    await drain();
+    const owners = await P().lead.findMany({
+      where: { id: { in: leads.map((lead) => lead.id) } },
+      select: { ownerId: true },
+    });
+    expect(owners.filter((lead) => lead.ownerId === a)).toHaveLength(3);
+    expect(owners.filter((lead) => lead.ownerId === b)).toHaveLength(3);
+  });
+
+  test("territory matches normalized country or region, first match, then fallback", async () => {
+    const w = await world();
+    const [a, b, fallback] = await Promise.all([member(w.ws), member(w.ws), member(w.ws)]);
+    await rule(w, "label_added", [
+      {
+        type: "assign_owner",
+        strategy: "territory",
+        territories: [
+          { countries: ["DE"], userId: a },
+          { regions: ["bavaria"], userId: b },
+        ],
+        fallbackUserId: fallback,
+      },
+    ]);
+    const locations = [
+      { country: "germany", region: " Bavaria " },
+      { region: " Bavaria " },
+      {},
+      { country: "FR" },
+    ];
+    const leads = await Promise.all(
+      locations.map((location, i) =>
+        P().lead.create({
+          data: { workspaceId: w.ws, email: `territory-${++n}-${i}@test.io`, ...location },
+        }),
+      ),
+    );
+    for (const lead of leads) await ev(w, "LABEL_ADDED", { leadId: lead.id });
+    await drain();
+    expect(
+      (
+        await Promise.all(
+          leads.map((lead) => P().lead.findUniqueOrThrow({ where: { id: lead.id } })),
+        )
+      ).map((lead) => lead.ownerId),
+    ).toEqual([a, b, fallback, fallback]);
+    const noFallback = await world();
+    await rule(noFallback, "label_added", [
+      {
+        type: "assign_owner",
+        strategy: "territory",
+        territories: [{ countries: ["DE"], userId: await member(noFallback.ws) }],
+      },
+    ]);
+    await ev(noFallback, "LABEL_ADDED", { leadId: noFallback.lead!.id });
+    await drain();
+    expect((await runs(noFallback.ws))[0]).toMatchObject({
+      status: "FAILED",
+      error: "no_assignee",
+    });
+  });
+
+  test("the original owner form still overwrites", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: a } });
+    await rule(w, "label_added", [{ type: "assign_owner", userId: b }]);
+    await ev(w, "LABEL_ADDED", { leadId: w.lead!.id });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: w.lead!.id } })).ownerId).toBe(b);
+  });
+
+  test("validates strategy members, country, empty territory, and mixed input", async () => {
+    const w = await world();
+    const foreign = await member((await world()).ws);
+    const a = await member(w.ws);
+    for (const action of [
+      { strategy: "round_robin", userIds: [a, foreign] },
+      { strategy: "territory", territories: [{ countries: ["DE"], userId: foreign }] },
+      {
+        strategy: "territory",
+        territories: [{ countries: ["DE"], userId: a }],
+        fallbackUserId: foreign,
+      },
+    ])
+      expect(await err(rule(w, "label_added", [{ type: "assign_owner", ...action }]))).toEqual({
+        status: 400,
+        message: "invalid_reference",
+      });
+    expect(
+      await err(
+        rule(w, "label_added", [
+          {
+            type: "assign_owner",
+            strategy: "territory",
+            territories: [{ countries: ["Nowhereland"], userId: a }],
+          },
+        ]),
+      ),
+    ).toEqual({ status: 400, message: "invalid_country" });
+    expect(
+      await err(
+        rule(w, "label_added", [
+          { type: "assign_owner", strategy: "territory", territories: [{ userId: a }] },
+        ]),
+      ),
+    ).toEqual({ status: 400, message: "territory_empty" });
+    expect(
+      (
+        await err(
+          rule(w, "label_added", [
+            { type: "assign_owner", userId: a, strategy: "round_robin", userIds: [a] },
+          ]),
+        )
+      )?.status,
+    ).toBe(400);
+  });
+});
+
 describe("validation", () => {
   test("unknown trigger, 11 actions, foreign references, the 51st rule", async () => {
     const w = await world();

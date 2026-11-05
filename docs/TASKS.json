@@ -1041,7 +1041,7 @@
    "id": "P9-T09",
    "phase": 9,
    "title": "Round-robin and territory assignment",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T08"
    ],

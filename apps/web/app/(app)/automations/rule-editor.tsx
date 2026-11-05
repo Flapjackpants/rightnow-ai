@@ -33,6 +33,86 @@ const csv = (s: string) =>
     .map((x) => x.trim())
     .filter(Boolean);
 
+type Territory = { countries?: string[]; regions?: string[]; userId: string };
+const jsonRows = <T,>(value: string | undefined): T[] => {
+  try {
+    const parsed: unknown = JSON.parse(value || "[]");
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+};
+
+function TerritoryRows({
+  value,
+  members,
+  onChange,
+}: {
+  value: string | undefined;
+  members: Refs["members"];
+  onChange: (value: string) => void;
+}) {
+  const rows = jsonRows<Territory>(value);
+  const put = (next: Territory[]) => onChange(JSON.stringify(next));
+  const edit = (i: number, patch: Partial<Territory>) =>
+    put(rows.map((row, j) => (j === i ? { ...row, ...patch } : row)));
+  return (
+    <div className="flex flex-col gap-2">
+      {rows.map((row, i) => (
+        <div key={i} className="flex flex-wrap items-end gap-2">
+          <label className="flex flex-col gap-1 text-sm">
+            Countries
+            <Input
+              aria-label={`Territory ${i + 1} countries`}
+              value={(row.countries ?? []).join(", ")}
+              onChange={(e) => edit(i, { countries: csv(e.target.value) })}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Regions
+            <Input
+              aria-label={`Territory ${i + 1} regions`}
+              value={(row.regions ?? []).join(", ")}
+              onChange={(e) => edit(i, { regions: csv(e.target.value) })}
+            />
+          </label>
+          <label className="flex flex-col gap-1 text-sm">
+            Rep
+            <Select
+              aria-label={`Territory ${i + 1} rep`}
+              value={row.userId ?? ""}
+              onChange={(e) => edit(i, { userId: e.target.value })}
+            >
+              <option value="">Choose</option>
+              {members.map((member) => (
+                <option key={member.userId} value={member.userId}>
+                  {member.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <Button
+            type="button"
+            variant="danger-ghost"
+            size="sm"
+            onClick={() => put(rows.filter((_, j) => j !== i))}
+          >
+            Remove
+          </Button>
+        </div>
+      ))}
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => put([...rows, { userId: "" }])}
+      >
+        Add territory
+      </Button>
+    </div>
+  );
+}
+
 export function RuleEditor({
   rule,
   refs,
@@ -224,6 +304,39 @@ export function RuleEditor({
                         />
                         {f.label}
                       </label>
+                    ) : f.kind === "members" ? (
+                      <fieldset key={f.key} className="flex flex-col gap-1.5">
+                        <legend className="text-sm">{f.label}</legend>
+                        {refs.members.map((member) => {
+                          const chosen = jsonRows<string>(a.v[f.key]);
+                          return (
+                            <label
+                              key={member.userId}
+                              className="flex items-center gap-1.5 text-sm"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={chosen.includes(member.userId)}
+                                onChange={() =>
+                                  set(
+                                    JSON.stringify(
+                                      chosen.includes(member.userId)
+                                        ? chosen.filter((id) => id !== member.userId)
+                                        : [...chosen, member.userId],
+                                    ),
+                                  )
+                                }
+                              />
+                              {member.name}
+                            </label>
+                          );
+                        })}
+                      </fieldset>
+                    ) : f.kind === "territories" ? (
+                      <div key={f.key} className="flex flex-col gap-1.5">
+                        <span className="text-sm">{f.label}</span>
+                        <TerritoryRows value={a.v[f.key]} members={refs.members} onChange={set} />
+                      </div>
                     ) : (
                       <div key={f.key} className="flex flex-col gap-1.5">
                         <Label htmlFor={id}>{f.label}</Label>

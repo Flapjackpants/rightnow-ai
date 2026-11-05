@@ -10,7 +10,13 @@ import {
 describe("rule editor tables", () => {
   it("name exactly the triggers and actions the engine has", () => {
     expect(Object.keys(CLIENT_TRIGGERS).sort()).toEqual(Object.keys(TRIGGERS).sort());
-    expect(Object.keys(ACTION_TYPES).sort()).toEqual(Object.keys(ACTIONS).sort());
+    // two editor-only types that both save as assign_owner
+    const uiOnly = ["assign_round_robin", "assign_territory"];
+    expect(
+      Object.keys(ACTION_TYPES)
+        .filter((k) => !uiOnly.includes(k))
+        .sort(),
+    ).toEqual(Object.keys(ACTIONS).sort());
   });
 
   it("pick the webhook of send_webhook from the workspace's webhooks", () => {

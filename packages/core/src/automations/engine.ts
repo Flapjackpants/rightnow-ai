@@ -8,6 +8,7 @@ import { sleep, type Clock } from "../clock";
 import { ensureOpportunity, errorCode, inSavepoint } from "../crm/opportunities";
 import { isLockTimeout, isRetryable, withTxRetry } from "../dispatch";
 import { companyDomainOf } from "../leads/domain";
+import { normalizeCountry, normalizeRegion } from "../leads/regions";
 import { suppress } from "../leads/suppression";
 import { startOfNextDay } from "../schedule";
 import { enqueueDelivery, insertDeliveries } from "../webhooks/deliver";
@@ -225,11 +226,83 @@ export const ACTIONS: Record<string, Action> = {
       await moveToSubsequenceTx(tx, clock, e.workspaceId, null, cl.id, d.subsequenceId);
     },
   ),
-  assign_owner: act("leads:write", true, z.strictObject({ userId: ref }), (tx, _c, e, d) =>
-    tx.lead.updateMany({
-      where: { id: e.leadId!, workspaceId: e.workspaceId },
-      data: { ownerId: d.userId },
-    }),
+  assign_owner: act(
+    "leads:write",
+    true,
+    z.union([
+      z.strictObject({ userId: ref }),
+      z.strictObject({ strategy: z.literal("round_robin"), userIds: z.array(ref).min(1).max(50) }),
+      z.strictObject({
+        strategy: z.literal("territory"),
+        territories: z
+          .array(
+            z.strictObject({
+              countries: z.array(z.string().trim().min(1).max(100)).max(250).optional(),
+              regions: z.array(z.string().trim().min(1).max(100)).max(200).optional(),
+              userId: ref,
+            }),
+          )
+          .min(1)
+          .max(50),
+        fallbackUserId: ref.optional(),
+      }),
+    ]),
+    async (tx, _c, e, d, ruleId) => {
+      if ("userId" in d) {
+        await tx.lead.updateMany({
+          where: { id: e.leadId!, workspaceId: e.workspaceId },
+          data: { ownerId: d.userId },
+        });
+        return;
+      }
+      const lead = await tx.lead.findFirst({
+        where: { id: e.leadId!, workspaceId: e.workspaceId },
+        select: { ownerId: true, country: true, region: true },
+      });
+      // Rotation and territories must not take an existing lead from its rep.
+      if (!lead || lead.ownerId) return;
+      let ownerId: string | undefined;
+      if (d.strategy === "round_robin") {
+        const rows = await tx.$queryRaw<{ assignCursor: number }[]>`UPDATE "AutomationRule"
+          SET "assignCursor" = "assignCursor" + 1
+          WHERE id = ${ruleId} AND "workspaceId" = ${e.workspaceId}
+          RETURNING "assignCursor"`;
+        const start = ((rows[0]?.assignCursor ?? 1) - 1) % d.userIds.length;
+        const members = await tx.member.findMany({
+          where: { workspaceId: e.workspaceId, userId: { in: d.userIds } },
+          select: { userId: true },
+        });
+        const available = new Set(members.map((m) => m.userId));
+        ownerId = Array.from(
+          { length: d.userIds.length },
+          (_, i) => d.userIds[(start + i) % d.userIds.length]!,
+        ).find((id) => available.has(id));
+      } else {
+        const country = normalizeCountry(lead.country);
+        const region = normalizeRegion(lead.region);
+        const candidates = [...d.territories.map((t) => t.userId), d.fallbackUserId].filter(
+          (id): id is string => !!id,
+        );
+        const members = await tx.member.findMany({
+          where: { workspaceId: e.workspaceId, userId: { in: candidates } },
+          select: { userId: true },
+        });
+        const available = new Set(members.map((m) => m.userId));
+        ownerId = d.territories.find(
+          (t) =>
+            available.has(t.userId) &&
+            ((!!country && !!t.countries?.some((c) => normalizeCountry(c) === country)) ||
+              (!!region && !!t.regions?.some((r) => normalizeRegion(r) === region))),
+        )?.userId;
+        if (!ownerId && d.fallbackUserId && available.has(d.fallbackUserId))
+          ownerId = d.fallbackUserId;
+      }
+      if (!ownerId) throw coded("no_assignee");
+      await tx.lead.updateMany({
+        where: { id: e.leadId!, workspaceId: e.workspaceId, ownerId: null },
+        data: { ownerId },
+      });
+    },
   ),
   add_tag: act(
     "leads:write",
