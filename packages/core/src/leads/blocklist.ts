@@ -51,7 +51,15 @@ export async function addBlocklist(prisma: Db, ws: string, actorId: Actor, value
 export const blocklistQuery = z.strictObject({
   q: z.string().trim().min(1).optional(),
   reason: z
-    .enum(["UNSUBSCRIBE", "HARD_BOUNCE", "COMPLAINT", "MANUAL", "NOT_INTERESTED", "GDPR_ERASURE"])
+    .enum([
+      "UNSUBSCRIBE",
+      "HARD_BOUNCE",
+      "COMPLAINT",
+      "MANUAL",
+      "NOT_INTERESTED",
+      "GDPR_ERASURE",
+      "CUSTOMER",
+    ])
     .optional(),
   kind: z.enum(["EMAIL", "DOMAIN"]).optional(),
   cursor: z.string().min(1).optional(),

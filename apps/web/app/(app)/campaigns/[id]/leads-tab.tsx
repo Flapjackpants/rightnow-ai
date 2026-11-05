@@ -26,6 +26,7 @@ const SKIP: Record<string, string> = {
   already_in_campaign: "already in this campaign",
   suppressed: "suppressed",
   deleted: "deleted",
+  excluded_region: "in an excluded region",
 };
 
 export function LeadsTab({

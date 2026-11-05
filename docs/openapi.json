@@ -3561,7 +3561,8 @@
                 "COMPLAINT",
                 "MANUAL",
                 "NOT_INTERESTED",
-                "GDPR_ERASURE"
+                "GDPR_ERASURE",
+                "CUSTOMER"
               ]
             }
           },
@@ -10705,6 +10706,18 @@
                       }
                     ]
                   },
+                  "region": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
                   "plValue": {
                     "anyOf": [
                       {
@@ -10982,6 +10995,18 @@
                     ]
                   },
                   "country": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 100
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "region": {
                     "anyOf": [
                       {
                         "type": "string",

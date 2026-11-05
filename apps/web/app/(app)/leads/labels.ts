@@ -36,6 +36,7 @@ export const REASON: Record<string, string> = {
   MANUAL: "Manual",
   NOT_INTERESTED: "Not interested",
   GDPR_ERASURE: "Erased (GDPR)",
+  CUSTOMER: "Customer",
 };
 /** B3.3 section tabs shared by the Leads, Lead lists and Blocklist pages. */
 export const LEAD_TABS = [

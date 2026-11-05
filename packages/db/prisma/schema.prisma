@@ -66,6 +66,8 @@ model Workspace {
   rewarmExitBouncePct  Float                 @default(2) // 0.5-10: hard bounce % above which a re-warm does not end (D51)
   currency             String                @default("USD") // ISO 4217, one per workspace (D40)
   crmAutoOpportunity   Boolean               @default(true) // D40: an interest change opens a deal
+  excludedCountries    String[]              @default([]) // ISO alpha-2, upper case
+  excludedRegions      String[]              @default([]) // lower-cased
 }
 
 // better-auth tables. Roles are stored lowercase: owner | admin | member | viewer.
@@ -442,6 +444,7 @@ enum SuppressionReason {
   MANUAL
   NOT_INTERESTED
   GDPR_ERASURE
+  CUSTOMER
 }
 
 enum ImportStatus {
@@ -485,6 +488,7 @@ model Lead {
   uploadMethod         String? // PS-SEC-12: manual | api | csv, set by the server, never from input
   lawfulBasis          String?
   country              String?
+  region               String?
   importJobId          String?
   emailsSent           Int                @default(0)
   opens                Int                @default(0)

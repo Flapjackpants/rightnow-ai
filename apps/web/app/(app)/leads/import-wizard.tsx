@@ -21,6 +21,8 @@ const FIELDS: [string, string][] = [
   ["jobTitle", "Job title"],
   ["website", "Website"],
   ["phone", "Phone"],
+  ["country", "Country"],
+  ["region", "Region"],
 ];
 const BASES = [
   ["legitimate_interest", "Legitimate interest"],

@@ -41,6 +41,7 @@ export const ACTION_TYPES: Record<string, { label: string; fields: Field[] }> = 
     ],
   },
   suppress_contact: { label: "Suppress contact", fields: [] },
+  suppress_company_domain: { label: "Block the company's domain", fields: [] },
   pause_account: {
     label: "Pause mailbox",
     fields: [{ key: "until", label: "Until next day", kind: "check" }],

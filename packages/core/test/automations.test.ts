@@ -303,6 +303,42 @@ describe("actions", () => {
     );
   });
 
+  test("suppress_company_domain: Suppression DOMAIN/CUSTOMER/automation, the company's open leads stop", async () => {
+    const w = await world();
+    const domain = w.lead!.email.split("@")[1]!;
+    const colleague = await P().lead.create({
+      data: { workspaceId: w.ws, email: `colleague@${domain}` },
+    });
+    const c2 = await P().campaign.create({
+      data: { workspaceId: w.ws, name: "c2", status: "ACTIVE" },
+    });
+    const colCl = await P().campaignLead.create({
+      data: { workspaceId: w.ws, campaignId: c2.id, leadId: colleague.id, state: "ACTIVE" },
+    });
+    await rule(w, "deal_won", [{ type: "suppress_company_domain" }]);
+    await ev(w, "DEAL_WON", { leadId: w.lead!.id });
+    await drain();
+    const s = await P().suppression.findMany({ where: { workspaceId: w.ws } });
+    expect(s.map((x) => [x.kind, x.value, x.reason, x.source])).toEqual([
+      ["DOMAIN", domain, "CUSTOMER", "automation"],
+    ]);
+    expect((await P().campaignLead.findUniqueOrThrow({ where: { id: colCl.id } })).state).toBe(
+      "STOPPED",
+    );
+  });
+
+  test("suppress_company_domain adds nothing for a free-mail lead", async () => {
+    const w = await world();
+    await P().lead.update({
+      where: { id: w.lead!.id },
+      data: { email: "someone@gmail.com" },
+    });
+    await rule(w, "deal_won", [{ type: "suppress_company_domain" }]);
+    await ev(w, "DEAL_WON", { leadId: w.lead!.id });
+    await drain();
+    expect(await P().suppression.count({ where: { workspaceId: w.ws } })).toBe(0);
+  });
+
   test("pause_account until next_day: PAUSED to the next local midnight; NEEDS_ATTENTION unchanged", async () => {
     const s = await seedCampaign(P(), {
       at: T,
@@ -1005,6 +1041,7 @@ describe("A12: no automation sends mail by itself", () => {
         "pause_account",
         "send_webhook",
         "stop_sequence",
+        "suppress_company_domain",
         "suppress_contact",
       ].sort(),
     );

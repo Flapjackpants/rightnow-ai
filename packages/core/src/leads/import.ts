@@ -48,6 +48,8 @@ const MAX_LEN = {
   jobTitle: 200,
   website: 500,
   phone: 50,
+  country: 100,
+  region: 100,
 };
 
 export async function previewImport(prisma: Db, ws: string, buf: Buffer, mapping?: Mapping) {
@@ -305,6 +307,7 @@ async function insertBatch(prisma: Db, job: Job, opts: Opts, cands: Cand[]) {
         await enrollBatch(tx, ws, opts.campaignId, members, false, sk);
         if (sk.in_other_active_campaign)
           skip.in_other_active_campaign = sk.in_other_active_campaign;
+        if (sk.excluded_region) skip.excluded_region = sk.excluded_region;
       }
       return { skip, imported: ours.length + newIds.length, attached: attach.length };
     },

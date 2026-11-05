@@ -523,6 +523,7 @@ describe("payload", () => {
       phone: null,
       personalization: null,
       country: null,
+      region: null,
       email_account: w.accounts[0]!.email,
       unibox_url: `https://app.example.com/inbox?thread=${th.id}`,
       step: 2,

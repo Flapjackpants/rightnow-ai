@@ -9,6 +9,11 @@ import { Input } from "./ui/input";
 import { Switch } from "./ui/switch";
 
 const cap = (v: FormDataEntryValue | null) => (String(v).trim() === "" ? null : Number(v));
+const locations = (v: FormDataEntryValue | null) =>
+  String(v ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
 
 export function WorkspaceSettings({
   timezone,
@@ -18,6 +23,9 @@ export function WorkspaceSettings({
   disableOpenTracking,
   firstEmailTextOnly,
   storeNonLeadMail,
+  excludedCountries,
+  excludedRegions,
+  noLocationLeads,
 }: {
   timezone: string;
   physicalAddress: string;
@@ -26,6 +34,9 @@ export function WorkspaceSettings({
   disableOpenTracking: boolean;
   firstEmailTextOnly: boolean;
   storeNonLeadMail: boolean;
+  excludedCountries: string[];
+  excludedRegions: string[];
+  noLocationLeads: number;
 }) {
   const router = useRouter();
   const [msg, setMsg] = useState("");
@@ -44,6 +55,8 @@ export function WorkspaceSettings({
         disableOpenTracking: f.has("disableOpenTracking"),
         firstEmailTextOnly: f.has("firstEmailTextOnly"),
         storeNonLeadMail: f.has("storeNonLeadMail"),
+        excludedCountries: locations(f.get("excludedCountries")),
+        excludedRegions: locations(f.get("excludedRegions")),
       }),
     });
     const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -102,6 +115,25 @@ export function WorkspaceSettings({
             type="number"
             min={1}
             defaultValue={perCompanyDailyLimit ?? ""}
+          />
+        </SettingRow>
+        <SettingRow
+          htmlFor="excludedCountries"
+          label="Excluded countries"
+          helper={`Names or codes such as US or Germany. Open campaign leads in these places stop when you save. ${noLocationLeads} leads have no location and still send.`}
+        >
+          <Input
+            id="excludedCountries"
+            name="excludedCountries"
+            defaultValue={excludedCountries.join(", ")}
+            aria-describedby="excludedCountries-help"
+          />
+        </SettingRow>
+        <SettingRow htmlFor="excludedRegions" label="Excluded regions">
+          <Input
+            id="excludedRegions"
+            name="excludedRegions"
+            defaultValue={excludedRegions.join(", ")}
           />
         </SettingRow>
         <SettingRow

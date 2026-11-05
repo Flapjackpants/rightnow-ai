@@ -969,7 +969,7 @@
    "id": "P9-T03",
    "phase": 9,
    "title": "Customer and region exclusions",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T02"
    ],

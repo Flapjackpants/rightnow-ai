@@ -7,6 +7,7 @@ import { enrollBatch, moveToSubsequenceTx, noSkips } from "../campaigns/enroll";
 import { sleep, type Clock } from "../clock";
 import { ensureOpportunity, errorCode, inSavepoint } from "../crm/opportunities";
 import { isLockTimeout, isRetryable, withTxRetry } from "../dispatch";
+import { companyDomainOf } from "../leads/domain";
 import { suppress } from "../leads/suppression";
 import { startOfNextDay } from "../schedule";
 import { enqueueDelivery, insertDeliveries } from "../webhooks/deliver";
@@ -148,6 +149,16 @@ export const ACTIONS: Record<string, Action> = {
     // as optOutTx: the stop reason before suppress(), which stamps SUPPRESSED on whatever is still open
     await stopOpenCampaignLeads(tx, e.workspaceId, [e.leadId!], "SUPPRESSED", clock.now());
     await suppress(tx, e.workspaceId, [{ kind: "EMAIL", value: l.email }], "MANUAL", "automation");
+  }),
+  suppress_company_domain: act("blocklist:write", true, none, async (tx, _clock, e) => {
+    const l = await tx.lead.findFirst({
+      where: { id: e.leadId!, workspaceId: e.workspaceId },
+      select: { email: true },
+    });
+    if (!l) return;
+    const value = companyDomainOf(l.email);
+    if (!value) return; // free mail has no company domain
+    await suppress(tx, e.workspaceId, [{ kind: "DOMAIN", value }], "CUSTOMER", "automation");
   }),
   pause_account: act(
     "accounts:write",

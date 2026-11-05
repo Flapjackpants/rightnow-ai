@@ -32,6 +32,7 @@ export * from "./deliverability/rewarm";
 export * from "./deliverability/warmup";
 export * from "./deliverability/warmup-settings";
 export * from "./leads/domain";
+export * from "./leads/regions";
 export * from "./leads/suppression";
 export * from "./leads/service";
 export * from "./leads/csv";

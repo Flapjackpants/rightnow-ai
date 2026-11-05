@@ -51,6 +51,7 @@ const fields = {
   source: opt(200),
   lawfulBasis: opt(200),
   country: opt(100),
+  region: opt(100),
   plValue: z.number().nonnegative().max(1e12).nullable(),
 };
 export const createLeadInput = z
@@ -553,7 +554,14 @@ export async function gdprDeleteLead(
 const FILL = [
   ...["firstName", "lastName", "companyName", "companyDomain", "jobTitle", "website", "industry"],
   ...["phone", "personalization", "esg", "enrichmentStatus", "plValue", "ownerId", "source"],
-  ...["lawfulBasis", "country", "interestStatus", "lastSenderAccountId", "lastEngagement"],
+  ...[
+    "lawfulBasis",
+    "country",
+    "region",
+    "interestStatus",
+    "lastSenderAccountId",
+    "lastEngagement",
+  ],
 ] as const;
 const LATEST = [
   ...["lastContactedAt", "lastOpenAt", "lastReplyAt", "lastClickAt", "lastTouchAt"],

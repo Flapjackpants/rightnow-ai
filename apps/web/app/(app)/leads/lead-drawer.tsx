@@ -51,6 +51,7 @@ const FIELDS = [
   ...[
     ["phone", "Phone"],
     ["country", "Country"],
+    ["region", "Region"],
   ],
 ] as const;
 type TimelineItem = { at: string; kind: string; detail: Record<string, unknown> };

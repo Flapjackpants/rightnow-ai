@@ -2,7 +2,15 @@ import Papa from "papaparse";
 import { LeadError } from "./service";
 
 export type LeadField =
-  "email" | "firstName" | "lastName" | "companyName" | "jobTitle" | "website" | "phone";
+  | "email"
+  | "firstName"
+  | "lastName"
+  | "companyName"
+  | "jobTitle"
+  | "website"
+  | "phone"
+  | "country"
+  | "region";
 export type Mapping = (LeadField | `custom:${string}` | null)[];
 
 const ALIASES: Record<LeadField, string[]> = {
@@ -13,6 +21,8 @@ const ALIASES: Record<LeadField, string[]> = {
   jobTitle: ["title", "jobtitle", "position"],
   website: ["website", "url", "domain"],
   phone: ["phone", "phonenumber"],
+  country: ["country"],
+  region: ["region", "state", "province"],
 };
 export const LEAD_FIELDS = Object.keys(ALIASES) as LeadField[];
 

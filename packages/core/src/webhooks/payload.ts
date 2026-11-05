@@ -14,6 +14,7 @@ const LEAD_FIELDS = [
   ["phone", "phone"],
   ["personalization", "personalization"],
   ["country", "country"],
+  ["region", "region"],
 ] as const;
 /** Every key the payload sets itself, present or not: a lead custom field with one of these names is dropped, never passed off as standard. */
 const STANDARD_FIELDS: ReadonlySet<string> = new Set([
