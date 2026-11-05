@@ -4035,6 +4035,9 @@
                   "allowRisky": {
                     "type": "boolean"
                   },
+                  "allowCatchAll": {
+                    "type": "boolean"
+                  },
                   "bounceProtect": {
                     "type": "boolean"
                   },
@@ -4341,6 +4344,9 @@
                     }
                   },
                   "allowRisky": {
+                    "type": "boolean"
+                  },
+                  "allowCatchAll": {
                     "type": "boolean"
                   },
                   "bounceProtect": {
@@ -6473,6 +6479,9 @@
                         }
                       },
                       "allowRisky": {
+                        "type": "boolean"
+                      },
+                      "allowCatchAll": {
                         "type": "boolean"
                       },
                       "bounceProtect": {
@@ -12426,6 +12435,24 @@
                       "kind",
                       "url",
                       "statusPath"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "kind": {
+                        "type": "string",
+                        "const": "millionverifier"
+                      },
+                      "apiKey": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 500
+                      }
+                    },
+                    "required": [
+                      "kind"
                     ],
                     "additionalProperties": false
                   }

@@ -9,6 +9,8 @@ import { createImport, runImport } from "../src/leads/import";
 import {
   getVerifierSettings,
   httpVerifier,
+  MILLIONVERIFIER_URL,
+  millionVerifier,
   mxVerifier,
   queueVerify,
   runVerify,
@@ -189,6 +191,95 @@ describe("httpVerifier", () => {
         sig(),
       ),
     ).rejects.toMatchObject({ code: "host_not_public" });
+  });
+});
+
+describe("millionVerifier", () => {
+  type Req = typeof safeRequest;
+  const reply = (body: unknown, status = 200) =>
+    vi.fn<Req>(async () => res(JSON.stringify(body), status));
+  const pub = async () => ["93.184.216.34"];
+  const verifier = (f: Req) => millionVerifier({ apiKey: "mv-secret" }, f, pub);
+  const code = (f: Req) =>
+    verifier(f)
+      .verify("a@b.test", sig())
+      .then(
+        () => "no error",
+        (e: { code?: string }) => e.code,
+      );
+
+  test.each([
+    ["ok", "VERIFIED"],
+    ["catch_all", "CATCH_ALL"],
+    ["invalid", "INVALID"],
+    ["disposable", "RISKY"],
+    ["unknown", null],
+  ])("result %s -> %s", async (result, want) => {
+    expect(await verifier(reply({ result })).verify("a@b.test", sig())).toBe(want);
+  });
+
+  test("sends a GET to the fixed host with the key, the encoded email and an 8 s timeout", async () => {
+    const f = reply({ result: "ok" });
+    expect(await verifier(f).verify("a+b@x.test", sig())).toBe("VERIFIED");
+    const [url, o] = f.mock.calls[0]!;
+    const u = new URL(url);
+    expect(`${u.origin}${u.pathname}`).toBe(MILLIONVERIFIER_URL);
+    expect(u.searchParams.get("api")).toBe("mv-secret");
+    expect(u.searchParams.get("email")).toBe("a+b@x.test");
+    expect(u.searchParams.get("timeout")).toBe("8");
+    expect(o).toMatchObject({
+      method: "GET",
+      allowPrivate: false,
+      resolve: pub,
+      timeoutMs: 10_000,
+      maxResponseBytes: 64 * 1024,
+    });
+  });
+
+  test("every failure is a coded reason, never the URL, key or body", async () => {
+    for (const st of [301, 400, 500, 503]) expect(await code(reply({}, st))).toBe(`http_${st}`);
+    expect(await code(reply({ result: "error", error: "Apikey not found" }))).toBe(
+      "bad_status_path",
+    );
+    expect(await code(reply({}))).toBe("bad_status_path");
+    expect(await code(vi.fn(async () => res("not json")))).toBe("bad_response");
+    expect(
+      await code(
+        vi.fn<Req>(async () => {
+          throw new HttpOutError("response_too_large", 200);
+        }),
+      ),
+    ).toBe("bad_response");
+    expect(
+      await code(
+        vi.fn<Req>(async () => {
+          throw new HttpOutError("timeout");
+        }),
+      ),
+    ).toBe("timeout");
+  });
+
+  test("through runVerify the workspace records the code, never the key or body", async () => {
+    const ws = await mkWs();
+    const l = await mkLead(ws, "mv@r.test");
+    await queueVerify(db.prisma, clock, ws, "u", [l.id]);
+    const err = vi.spyOn(console, "error").mockImplementation(() => {});
+    await runVerify(db.prisma, clock, {
+      verifierFor: async () =>
+        millionVerifier(
+          { apiKey: "mv-secret" },
+          vi.fn<Req>(async () =>
+            res(JSON.stringify({ result: "error", error: "body-with-mv-secret" })),
+          ),
+          pub,
+        ),
+    });
+    const s = await getVerifierSettings(db.prisma, ws);
+    expect(s.lastError).toMatchObject({ reason: "bad_status_path" });
+    const all = JSON.stringify(s) + err.mock.calls.flat().join(" ");
+    expect(all).not.toContain("mv-secret");
+    expect(all).not.toContain("body-with");
+    err.mockRestore();
   });
 });
 
@@ -465,6 +556,43 @@ describe("settings", () => {
       { kind: "http", url: "https://v.example.com", statusPath: "a", extra: 1 },
     ])
       await expect(setVerifierSettings(db.prisma, clock, ws, "u", bad)).rejects.toThrow();
+  });
+
+  test("millionverifier stores the fixed URL, keeps its key and is built by workspaceVerifier", async () => {
+    const ws = await mkWs();
+    await setVerifierSettings(db.prisma, clock, ws, "u", {
+      kind: "millionverifier",
+      apiKey: "mv-key",
+    });
+    const w = await db.prisma.workspace.findUniqueOrThrow({ where: { id: ws } });
+    expect(w.verifierKind).toBe("millionverifier");
+    expect(JSON.parse(decrypt(w.verifierConfigEnc!))).toEqual({
+      url: MILLIONVERIFIER_URL,
+      apiKey: "mv-key",
+      statusPath: "result",
+    });
+    const s = await getVerifierSettings(db.prisma, ws);
+    expect(s).toEqual({
+      kind: "millionverifier",
+      url: MILLIONVERIFIER_URL,
+      statusPath: "result",
+      hasApiKey: true,
+    });
+    expect(JSON.stringify(s)).not.toContain("mv-key");
+    // the stored key is kept while the host stays the same
+    await setVerifierSettings(db.prisma, clock, ws, "u", { kind: "millionverifier" });
+    expect((await workspaceVerifier(db.prisma, ws, mx({}))).kind).toBe("millionverifier");
+    // an http config's key is never reused for MillionVerifier
+    const ws2 = await mkWs();
+    await setVerifierSettings(db.prisma, clock, ws2, "u", {
+      kind: "http",
+      url: "https://v.example.com/x",
+      apiKey: "k",
+      statusPath: "a",
+    });
+    await expect(
+      setVerifierSettings(db.prisma, clock, ws2, "u", { kind: "millionverifier" }),
+    ).rejects.toThrow("api_key_required");
   });
 });
 

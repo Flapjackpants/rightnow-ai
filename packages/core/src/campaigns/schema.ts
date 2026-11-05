@@ -34,6 +34,7 @@ export const campaignFields = {
   espRoutingRules: z.array(espRule).max(20),
   accountTags: z.array(text(50)).max(50),
   allowRisky: z.boolean(),
+  allowCatchAll: z.boolean(),
   bounceProtect: z.boolean(),
   // D19: every campaign email carries List-Unsubscribe, so the toggle only accepts true.
   unsubscribeHeader: z.literal(true, { error: "unsubscribe_header_required" }),

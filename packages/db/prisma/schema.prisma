@@ -53,7 +53,7 @@ model Workspace {
   firstEmailTextOnly   Boolean               @default(false)
   bounceThresholdPct   Float                 @default(3) // 0.5-20 (D34)
   healthSlowdownPct    Int                   @default(50) // 10-90 (D34)
-  verifierKind         String                @default("mx") // "mx" | "http" (D38)
+  verifierKind         String                @default("mx") // "mx" | "http" | "millionverifier" (D38)
   verifierConfigEnc    String? // encrypted {url, apiKey, statusPath}
   aiConfigEnc          String? // encrypted AiConfig {baseUrl, apiKey, model, prices?, classifierEnabled} (D47)
   // PS-CRM-12: false drops inbound replies from non-leads outside known threads (D48)
@@ -626,6 +626,7 @@ model Campaign {
   espRoutingRules       Json                 @default("[]")
   accountTags           String[]
   allowRisky            Boolean              @default(false)
+  allowCatchAll         Boolean              @default(false)
   bounceProtect         Boolean              @default(true)
   unsubscribeHeader     Boolean              @default(true)
   unsubscribeLink       Boolean              @default(true)

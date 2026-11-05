@@ -524,7 +524,8 @@ async function planCampaign(tx: Tx, campaignId: string, now: Date, o: PlanOpts) 
         : blocked.has(lead.email)
           ? "SUPPRESSED"
           : lead.verificationStatus === "INVALID" ||
-              (!c.allowRisky && ["RISKY", "CATCH_ALL"].includes(lead.verificationStatus))
+              (lead.verificationStatus === "RISKY" && !c.allowRisky) ||
+              (lead.verificationStatus === "CATCH_ALL" && !c.allowCatchAll)
             ? "SKIPPED"
             : null;
       if (stop) {

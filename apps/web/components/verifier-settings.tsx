@@ -36,6 +36,7 @@ export function VerifierSettings(v: Props) {
 function VerifierForm({ msg, setMsg, ...v }: Props & { msg: string; setMsg: (m: string) => void }) {
   const router = useRouter();
   const [kind, setKind] = useState(v.kind);
+  const external = kind === "http" || kind === "millionverifier";
 
   async function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -52,7 +53,7 @@ function VerifierForm({ msg, setMsg, ...v }: Props & { msg: string; setMsg: (m: 
               statusPath: f.get("statusPath"),
               ...(key && { apiKey: key }), // empty = keep the stored key
             }
-          : { kind },
+          : { kind, ...(key && { apiKey: key }) },
       ),
     });
     const j = (await res.json().catch(() => ({}))) as { error?: string };
@@ -71,7 +72,7 @@ function VerifierForm({ msg, setMsg, ...v }: Props & { msg: string; setMsg: (m: 
       id="verifier"
       title="Email verification"
       status={
-        v.kind === "http" ? (
+        v.kind !== "mx" ? (
           v.hasApiKey ? (
             <StatusPill tone="success">Key saved</StatusPill>
           ) : (
@@ -94,25 +95,28 @@ function VerifierForm({ msg, setMsg, ...v }: Props & { msg: string; setMsg: (m: 
           >
             <option value="mx">Built in (syntax and MX records)</option>
             <option value="http">External service (HTTPS)</option>
+            <option value="millionverifier">MillionVerifier</option>
           </Select>
         </SettingRow>
-        {kind === "http" && (
+        {external && (
           <>
-            <SettingRow
-              htmlFor="verifierUrl"
-              label="Service URL (https)"
-              helper={`Receives a POST with {"email": "..."} and an Authorization: Bearer header.`}
-            >
-              <Input
-                id="verifierUrl"
-                name="url"
-                type="url"
-                className="font-mono md:text-[13px]"
-                aria-describedby="verifierUrl-help"
-                defaultValue={v.url}
-                required
-              />
-            </SettingRow>
+            {kind === "http" && (
+              <SettingRow
+                htmlFor="verifierUrl"
+                label="Service URL (https)"
+                helper={`Receives a POST with {"email": "..."} and an Authorization: Bearer header.`}
+              >
+                <Input
+                  id="verifierUrl"
+                  name="url"
+                  type="url"
+                  className="font-mono md:text-[13px]"
+                  aria-describedby="verifierUrl-help"
+                  defaultValue={v.url}
+                  required
+                />
+              </SettingRow>
+            )}
             <SettingRow
               htmlFor="verifierKey"
               label="API key"
@@ -126,21 +130,25 @@ function VerifierForm({ msg, setMsg, ...v }: Props & { msg: string; setMsg: (m: 
                 aria-describedby="verifierKey-help"
                 placeholder={v.hasApiKey ? "Stored: leave empty to keep it" : ""}
               />
-              <Callout tone="warning">Changing the host requires a new key.</Callout>
+              {kind === "http" && (
+                <Callout tone="warning">Changing the host requires a new key.</Callout>
+              )}
             </SettingRow>
-            <SettingRow
-              htmlFor="verifierPath"
-              label="Response field with the result (e.g. result.status)"
-            >
-              <Input
-                id="verifierPath"
-                name="statusPath"
-                className="font-mono md:text-[13px]"
-                defaultValue={v.statusPath}
-                pattern="[A-Za-z0-9_.]{1,64}"
-                required
-              />
-            </SettingRow>
+            {kind === "http" && (
+              <SettingRow
+                htmlFor="verifierPath"
+                label="Response field with the result (e.g. result.status)"
+              >
+                <Input
+                  id="verifierPath"
+                  name="statusPath"
+                  className="font-mono md:text-[13px]"
+                  defaultValue={v.statusPath}
+                  pattern="[A-Za-z0-9_.]{1,64}"
+                  required
+                />
+              </SettingRow>
+            )}
           </>
         )}
         {v.lastError && (

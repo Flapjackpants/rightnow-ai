@@ -88,6 +88,21 @@ describe("verifier settings", () => {
     ])
       expect((await settings.PUT(req("PUT", b))).status, JSON.stringify(b)).toBe(400);
   });
+
+  it("MillionVerifier: fixed host, key write-only, no url field", async () => {
+    const MV = { kind: "millionverifier", apiKey: "mv-sekrit" };
+    expect((await settings.PUT(req("PUT", MV))).status).toBe(200);
+    const res = await settings.GET(req("GET"));
+    const text = await res.text();
+    expect(text).not.toContain("mv-sekrit");
+    expect(JSON.parse(text)).toEqual({
+      kind: "millionverifier",
+      url: "https://api.millionverifier.com/api/v3/",
+      statusPath: "result",
+      hasApiKey: true,
+    });
+    expect((await settings.PUT(req("PUT", { ...MV, url: "https://evil.test" }))).status).toBe(400);
+  });
 });
 
 describe("POST /leads/verify", () => {
