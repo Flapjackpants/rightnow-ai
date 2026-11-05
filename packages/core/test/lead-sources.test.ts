@@ -5,7 +5,15 @@ import { fixedClock } from "../src/clock";
 import { decrypt, ENCRYPTED_COLUMNS } from "../src/crypto";
 import { apolloEnrich, apolloSearch, leadSourceFilters } from "../src/leads/apollo";
 import { hashValue } from "../src/leads/suppression";
-import { getApolloSettings, runLeadSources, setApolloSettings } from "../src/leads/sources";
+import {
+  createLeadSource,
+  deleteLeadSource,
+  getApolloSettings,
+  listLeadSources,
+  runLeadSources,
+  setApolloSettings,
+  updateLeadSource,
+} from "../src/leads/sources";
 import { testEnv } from "./accounts-fixture";
 import { seedCampaign } from "./campaign-fixture";
 
@@ -92,6 +100,111 @@ describe("Apollo client", () => {
 });
 
 describe("lead sources", () => {
+  test("management validates references, authorization, names, limit, and scopes ids", async () => {
+    const s = await fixture();
+    const other = await fixture();
+    const input = {
+      name: "Managed",
+      filters: { personTitles: ["CTO"] },
+      listId: s.list.id,
+      campaignId: s.campaign.id,
+      lawfulBasis: "consent",
+      confirmedAuthorized: true,
+    };
+    await expect(
+      createLeadSource(P(), clock, s.ws, null, { ...input, confirmedAuthorized: false }),
+    ).rejects.toThrow("authorization_required");
+    await expect(
+      createLeadSource(P(), clock, s.ws, null, { ...input, listId: other.list.id }),
+    ).rejects.toThrow("unknown_list");
+    await expect(
+      createLeadSource(P(), clock, s.ws, null, { ...input, campaignId: other.campaign.id }),
+    ).rejects.toThrow("unknown_campaign");
+    await P().campaign.update({
+      where: { id: other.campaign.id },
+      data: { deletedAt: clock.now() },
+    });
+    await expect(
+      createLeadSource(P(), clock, other.ws, null, {
+        ...input,
+        listId: other.list.id,
+        campaignId: other.campaign.id,
+      }),
+    ).rejects.toThrow("unknown_campaign");
+    await P().campaign.update({ where: { id: s.campaign.id }, data: { status: "ARCHIVED" } });
+    await expect(createLeadSource(P(), clock, s.ws, null, input)).rejects.toThrow(
+      "unknown_campaign",
+    );
+    const created = await createLeadSource(P(), clock, s.ws, null, { ...input, campaignId: null });
+    await expect(
+      updateLeadSource(P(), clock, s.ws, null, created.id, { listId: other.list.id }),
+    ).rejects.toThrow("unknown_list");
+    await expect(
+      updateLeadSource(P(), clock, s.ws, null, created.id, { campaignId: other.campaign.id }),
+    ).rejects.toThrow("unknown_campaign");
+    await expect(
+      createLeadSource(P(), clock, s.ws, null, { ...input, campaignId: null }),
+    ).rejects.toThrow("name_taken");
+    await expect(
+      updateLeadSource(P(), clock, other.ws, null, created.id, { enabled: false }),
+    ).rejects.toThrow("not_found");
+    await expect(deleteLeadSource(P(), clock, other.ws, null, created.id)).rejects.toThrow(
+      "not_found",
+    );
+    await P().leadSource.createMany({
+      data: Array.from({ length: 18 }, (_, i) => ({
+        workspaceId: s.ws,
+        name: `Extra ${i}`,
+        filters: { personTitles: ["CTO"] },
+        listId: s.list.id,
+        lawfulBasis: "consent",
+      })),
+    });
+    await expect(
+      createLeadSource(P(), clock, s.ws, null, { ...input, name: "Overflow", campaignId: null }),
+    ).rejects.toThrow("source_limit");
+    expect(
+      await P().auditLog.count({
+        where: { workspaceId: s.ws, action: "lead_source.create", target: created.id },
+      }),
+    ).toBe(1);
+  });
+
+  test("patch resets cursor, clears errors on resume, computes today's credits, and audits", async () => {
+    const s = await fixture();
+    await P().leadSource.update({
+      where: { id: s.source.id },
+      data: {
+        nextPage: 4,
+        lastError: "apollo_auth",
+        lastErrorAt: clock.now(),
+        creditDay: new Date("2026-10-19T00:00:00Z"),
+        creditsUsed: 7,
+        enabled: false,
+      },
+    });
+    expect(
+      (await listLeadSources(P(), clock, s.ws)).find((x) => x.id === s.source.id)?.creditsUsedToday,
+    ).toBe(0);
+    const changed = await updateLeadSource(P(), clock, s.ws, null, s.source.id, {
+      filters: { personTitles: ["VP"] },
+      enabled: true,
+    });
+    expect(changed).toMatchObject({
+      nextPage: 1,
+      lastError: null,
+      lastErrorAt: null,
+      enabled: true,
+    });
+    await deleteLeadSource(P(), clock, s.ws, null, s.source.id);
+    const logs = await P().auditLog.findMany({
+      where: { workspaceId: s.ws, action: { startsWith: "lead_source." } },
+    });
+    expect(logs.map((x) => x.action)).toEqual(
+      expect.arrayContaining(["lead_source.update", "lead_source.delete"]),
+    );
+    expect(JSON.stringify(logs)).not.toContain("VP");
+  });
   test("encrypts settings and clears them with an audit", async () => {
     const s = await fixture();
     const w = await P().workspace.findUniqueOrThrow({ where: { id: s.ws } });

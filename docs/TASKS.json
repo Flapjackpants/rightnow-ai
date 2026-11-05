@@ -1005,7 +1005,7 @@
    "id": "P9-T06",
    "phase": 9,
    "title": "Apollo API and UI",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T05"
    ],

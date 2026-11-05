@@ -346,6 +346,10 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | DELETE | `/lead-lists/{id}/leads` | MEMBER | `leads:update` |
 | POST | `/lead-lists/{id}/move` | MEMBER | `leads:update` |
 | GET | `/lead-lists/{id}/stats` | VIEWER | `leads:read` |
+| GET | `/lead-sources` | ADMIN | session only |
+| POST | `/lead-sources` | ADMIN | session only |
+| PATCH | `/lead-sources/{id}` | ADMIN | session only |
+| DELETE | `/lead-sources/{id}` | ADMIN | session only |
 | GET | `/leads` | VIEWER | `leads:read` |
 | POST | `/leads` | MEMBER | `leads:create` |
 | GET | `/leads/{id}` | VIEWER | `leads:read` |
@@ -376,6 +380,8 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/scheduled-messages/{id}/retry` | MEMBER | `campaigns:update` |
 | GET | `/settings/ai` | ADMIN | session only |
 | PUT | `/settings/ai` | ADMIN | session only |
+| GET | `/settings/apollo` | ADMIN | session only |
+| PUT | `/settings/apollo` | ADMIN | session only |
 | GET | `/settings/verifier` | ADMIN | session only |
 | PUT | `/settings/verifier` | ADMIN | session only |
 | GET | `/settings/workspace` | ADMIN | session only |

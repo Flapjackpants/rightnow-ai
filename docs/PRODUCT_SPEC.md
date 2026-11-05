@@ -451,7 +451,7 @@ Instantly has no dedicated reactivation product: users lower limits manually, re
 2. **Fake-human signals.** Read emulation via headless browsers, forced "mark important", automatic spam rescue at configurable percentages exist in Instantly (S2). rightnow only performs these on mailboxes the user owns and has opted in, and labels them as test traffic; it does not inflate customer engagement metrics.
 3. **Warm-up health score formula** is undocumented (S4 exposes only `stat_warmup_score`). rightnow's score is its own transparent formula and not comparable to Instantly's.
 4. **AirMail, DFY mailboxes, pre-warmed domains, domain purchase/forwarding** (S23) depend on Instantly infrastructure. Out of scope.
-5. **SuperSearch / Lead Finder / AI enrichment / company lists / website visitors** use Instantly's data. Out of scope; only hook interfaces for external enrichment and verification.
+5. **SuperSearch / Lead Finder / AI enrichment / company lists / website visitors** use Instantly's own data, which remains out of scope. rightnow can load leads through your own Apollo account (Phase 9).
 6. **Built-in email verification** (0.25 credit/lead, S27) depends on Instantly's verifier. rightnow ships syntax/MX/disposable checks plus a provider hook.
 7. **AI Sales Agent, AI Inbox Manager, AI Deliverability Agent** (S23) are autonomous agents. Only optional, human-reviewed AI is in scope.
 8. **Tracking-pixel opens and clicks during downtime** are lost: opens/clicks that occur while the tracking domain or server is offline cannot be reconstructed. Replies, bounces, unsubscribes, sent mail are reconstructible from provider mailboxes.

@@ -1,4 +1,9 @@
-import type { AccountProvider, PrismaClient } from "@rightnow/db/client";
+import {
+  Prisma,
+  type AccountProvider,
+  type LeadSource,
+  type PrismaClient,
+} from "@rightnow/db/client";
 import { z } from "zod";
 import { audit } from "../audit";
 import type { Clock } from "../clock";
@@ -20,9 +25,188 @@ import { companyDomainOf, domainOf } from "./domain";
 import { regionExcluded } from "./regions";
 import { suppressedEmails } from "./suppression";
 import { parseEmail } from "./validate";
+import { LAWFUL_BASES } from "./import";
+import { LeadError } from "./service";
+import { isPrismaCode } from "../accounts/service";
 
 type Actor = string | null | undefined;
-const settings = z.strictObject({ apiKey: z.string().min(1).max(500).nullable() });
+export const apolloSettingsInput = z.strictObject({
+  apiKey: z.string().min(1).max(500).nullable(),
+});
+const settings = apolloSettingsInput;
+const MAX_SOURCES = 20;
+const name = z.string().trim().min(1).max(100);
+export const leadSourceInput = z.strictObject({
+  name,
+  filters: leadSourceFilters,
+  listId: z.string().min(1),
+  campaignId: z.string().min(1).nullable().optional(),
+  dailyCreditCap: z.number().int().min(1).max(10_000).optional(),
+  lawfulBasis: z.enum(LAWFUL_BASES),
+  confirmedAuthorized: z.literal(true, { error: "authorization_required" }),
+});
+export const leadSourcePatch = z.strictObject({
+  name: name.optional(),
+  filters: leadSourceFilters.optional(),
+  listId: z.string().min(1).optional(),
+  campaignId: z.string().min(1).nullable().optional(),
+  dailyCreditCap: z.number().int().min(1).max(10_000).optional(),
+  enabled: z.boolean().optional(),
+});
+export type ApiLeadSource = Pick<
+  LeadSource,
+  | "id"
+  | "name"
+  | "enabled"
+  | "listId"
+  | "campaignId"
+  | "lawfulBasis"
+  | "dailyCreditCap"
+  | "nextPage"
+  | "lastRunAt"
+  | "lastError"
+  | "lastErrorAt"
+  | "createdAt"
+> & { filters: z.infer<typeof leadSourceFilters>; creditsUsedToday: number };
+const notFound = () => new LeadError(404, "not_found");
+async function validateRefs(
+  tx: Prisma.TransactionClient,
+  ws: string,
+  v: { listId?: string; campaignId?: string | null },
+) {
+  if (
+    v.listId &&
+    !(await tx.leadList.findFirst({
+      where: { id: v.listId, workspaceId: ws },
+      select: { id: true },
+    }))
+  )
+    throw new LeadError(400, "unknown_list");
+  if (
+    v.campaignId &&
+    !(await tx.campaign.findFirst({
+      where: { id: v.campaignId, workspaceId: ws, status: { not: "ARCHIVED" }, deletedAt: null },
+      select: { id: true },
+    }))
+  )
+    throw new LeadError(400, "unknown_campaign");
+}
+function output(row: LeadSource, day: string): ApiLeadSource {
+  return {
+    id: row.id,
+    name: row.name,
+    enabled: row.enabled,
+    filters: row.filters as z.infer<typeof leadSourceFilters>,
+    listId: row.listId,
+    campaignId: row.campaignId,
+    lawfulBasis: row.lawfulBasis,
+    dailyCreditCap: row.dailyCreditCap,
+    creditsUsedToday: row.creditDay?.toISOString().slice(0, 10) === day ? row.creditsUsed : 0,
+    nextPage: row.nextPage,
+    lastRunAt: row.lastRunAt,
+    lastError: row.lastError,
+    lastErrorAt: row.lastErrorAt,
+    createdAt: row.createdAt,
+  };
+}
+export async function listLeadSources(
+  prisma: PrismaClient,
+  clock: Clock,
+  ws: string,
+): Promise<ApiLeadSource[]> {
+  const [workspace, rows] = await Promise.all([
+    prisma.workspace.findUniqueOrThrow({ where: { id: ws }, select: { timezone: true } }),
+    prisma.leadSource.findMany({ where: { workspaceId: ws }, orderBy: { name: "asc" } }),
+  ]);
+  return rows.map((row) => output(row, dayKey(workspace.timezone, clock.now())));
+}
+export async function createLeadSource(
+  prisma: PrismaClient,
+  clock: Clock,
+  ws: string,
+  actorId: Actor,
+  input: unknown,
+): Promise<ApiLeadSource> {
+  const v = leadSourceInput.parse(input);
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Workspace" WHERE id = ${ws} FOR NO KEY UPDATE`;
+      await validateRefs(tx, ws, v);
+      if ((await tx.leadSource.count({ where: { workspaceId: ws } })) >= MAX_SOURCES)
+        throw new LeadError(409, "source_limit");
+      const row = await tx.leadSource.create({
+        data: {
+          workspaceId: ws,
+          name: v.name,
+          filters: v.filters,
+          listId: v.listId,
+          campaignId: v.campaignId,
+          dailyCreditCap: v.dailyCreditCap,
+          lawfulBasis: v.lawfulBasis,
+        },
+      });
+      await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead_source.create", row.id);
+      const workspace = await tx.workspace.findUniqueOrThrow({
+        where: { id: ws },
+        select: { timezone: true },
+      });
+      return output(row, dayKey(workspace.timezone, clock.now()));
+    });
+  } catch (e) {
+    throw isPrismaCode(e, "P2002") ? new LeadError(409, "name_taken") : e;
+  }
+}
+export async function updateLeadSource(
+  prisma: PrismaClient,
+  clock: Clock,
+  ws: string,
+  actorId: Actor,
+  id: string,
+  input: unknown,
+): Promise<ApiLeadSource> {
+  const v = leadSourcePatch.parse(input);
+  try {
+    return await prisma.$transaction(async (tx) => {
+      if (
+        !(await tx.leadSource.findFirst({ where: { id, workspaceId: ws }, select: { id: true } }))
+      )
+        throw notFound();
+      await validateRefs(tx, ws, v);
+      const row = await tx.leadSource.update({
+        where: { id },
+        data: {
+          ...v,
+          ...(v.filters && { filters: v.filters, nextPage: 1 }),
+          ...(v.enabled === true && { lastError: null, lastErrorAt: null }),
+        },
+      });
+      await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead_source.update", id, {
+        fields: Object.keys(v),
+      });
+      const workspace = await tx.workspace.findUniqueOrThrow({
+        where: { id: ws },
+        select: { timezone: true },
+      });
+      return output(row, dayKey(workspace.timezone, clock.now()));
+    });
+  } catch (e) {
+    throw isPrismaCode(e, "P2002") ? new LeadError(409, "name_taken") : e;
+  }
+}
+export async function deleteLeadSource(
+  prisma: PrismaClient,
+  clock: Clock,
+  ws: string,
+  actorId: Actor,
+  id: string,
+): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    if (!(await tx.leadSource.findFirst({ where: { id, workspaceId: ws }, select: { id: true } })))
+      throw notFound();
+    await tx.leadSource.delete({ where: { id } });
+    await audit(tx, { workspaceId: ws, actorId, at: clock.now() }, "lead_source.delete", id);
+  });
+}
 const MAX_PER_RUN = 100;
 const MAX_PAGES_PER_RUN = 3;
 
