@@ -3,6 +3,7 @@
 import { Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { ActionCard } from "../../../components/empty-state";
+import { Callout } from "../../../components/callout";
 import { dialogClass } from "../../../components/overlay";
 import { StatusPill } from "../../../components/status-pill";
 import { Select } from "../../../components/ui/select";
@@ -47,6 +48,7 @@ type Counts = {
   existsInWorkspace: number;
 };
 type Preview = { headers: string[]; mapping: (string | null)[]; counts: Counts; sampled: boolean };
+type Capacity = { newPerDay: number; headroom: number };
 type Job = {
   status: "PENDING" | "RUNNING" | "DONE" | "FAILED";
   progress: number;
@@ -82,6 +84,7 @@ export function ImportWizard({
   const [step, setStep] = useState(1);
   const [file, setFile] = useState<File | null>(null);
   const [pre, setPre] = useState<Preview | null>(null);
+  const [capacity, setCapacity] = useState<Capacity | null>(null);
   const [mapping, setMapping] = useState<(string | null)[]>([]);
   const [listId, setListId] = useState("");
   const [skipWs, setSkipWs] = useState(true);
@@ -94,13 +97,16 @@ export function ImportWizard({
   const [busy, setBusy] = useState(false);
   const [jobId, setJobId] = useState("");
   const [job, setJob] = useState<Job | null>(null);
+  const capacityRequest = useRef(0);
   const done = useRef(onDone);
   done.current = onDone;
 
   function reset() {
+    capacityRequest.current++;
     setStep(1);
     setFile(null);
     setPre(null);
+    setCapacity(null);
     setAuthorized(false);
     setError("");
     setJobId("");
@@ -128,6 +134,16 @@ export function ImportWizard({
     setError("");
     setPre(r.json as unknown as Preview);
     setStep(3);
+    setCapacity(null);
+    const request = ++capacityRequest.current;
+    void fetch("/api/v1/leads/capacity")
+      .then(async (res) => (res.ok ? ((await res.json()) as Capacity) : null))
+      .then((value) => {
+        if (request === capacityRequest.current) setCapacity(value);
+      })
+      .catch(() => {
+        if (request === capacityRequest.current) setCapacity(null);
+      });
   }
 
   async function run() {
@@ -319,6 +335,13 @@ export function ImportWizard({
                 {count("Already in workspace", c?.existsInWorkspace)}
               </ul>
             </div>
+            {c && capacity && c.rows > capacity.headroom && (
+              <Callout tone="warning">
+                This file has {pre.sampled ? `at least ${c.rows}` : c.rows} leads, and your
+                mailboxes can take about {capacity.newPerDay} new leads a day. You can still import
+                it, but the leads will wait in the queue and may go stale.
+              </Callout>
+            )}
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="import-list">Add to list</Label>

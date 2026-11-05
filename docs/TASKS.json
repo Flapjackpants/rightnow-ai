@@ -981,7 +981,7 @@
    "id": "P9-T04",
    "phase": 9,
    "title": "Lead capacity",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T03"
    ],

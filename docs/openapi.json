@@ -11402,6 +11402,28 @@
         }
       }
     },
+    "/leads/capacity": {
+      "get": {
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-role": "VIEWER",
+        "x-scope": "leads:read",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/leads/export": {
       "get": {
         "security": [

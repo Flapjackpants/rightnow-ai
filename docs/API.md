@@ -355,6 +355,7 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | POST | `/leads/{id}/gdpr-delete` | ADMIN | session only |
 | GET | `/leads/{id}/timeline` | VIEWER | `leads:read` |
 | POST | `/leads/bulk` | MEMBER | `leads:update` |
+| GET | `/leads/capacity` | VIEWER | `leads:read` |
 | GET | `/leads/export` | VIEWER | `leads:read` |
 | POST | `/leads/merge` | MEMBER | `leads:update` |
 | POST | `/leads/verify` | MEMBER | `leads:update` |
