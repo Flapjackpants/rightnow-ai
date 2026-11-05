@@ -1029,7 +1029,7 @@
    "id": "P9-T08",
    "phase": 9,
    "title": "Slack alerts",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T07"
    ],

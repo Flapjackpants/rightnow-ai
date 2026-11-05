@@ -13099,6 +13099,13 @@
                         "type": "null"
                       }
                     ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "slack"
+                    ]
                   }
                 },
                 "required": [
@@ -13231,6 +13238,13 @@
                       {
                         "type": "null"
                       }
+                    ]
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "json",
+                      "slack"
                     ]
                   }
                 },

@@ -27,6 +27,7 @@ const STANDARD_FIELDS: ReadonlySet<string> = new Set([
   "lead_email",
   ...LEAD_FIELDS.map(([, out]) => out),
   "email_account",
+  "reason",
   "unibox_url",
   "step",
   "variant",
@@ -105,6 +106,14 @@ export async function buildPayload(
     for (const [k, out] of LEAD_FIELDS) p[out] = lead[k];
   }
   if (account) p.email_account = account.email;
+  if (
+    e.type === "ACCOUNT_ERROR" &&
+    e.meta &&
+    typeof e.meta === "object" &&
+    !Array.isArray(e.meta) &&
+    typeof (e.meta as Record<string, unknown>).reason === "string"
+  )
+    p.reason = (e.meta as Record<string, unknown>).reason;
   if (msg) p.unibox_url = `${appUrl.replace(/\/+$/, "")}/inbox?thread=${msg.threadId}`;
   if (step) {
     const labels = step.variants.map((v) => v.label).sort();

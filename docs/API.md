@@ -125,7 +125,7 @@ across a window edge.
 ## Webhooks
 
 Create webhooks with `POST /webhooks` (scope `webhooks:write`). The signing secret (`whsec_...`) is returned once, on
-create and on `rotate-secret`; rotation takes effect immediately with no overlap.
+create and on `rotate-secret`; rotation takes effect immediately with no overlap. Set `format` to `slack` to send formatted text to a Slack Incoming Webhook; its URL is encrypted and masked in API responses. The default `json` format retains the signed JSON payload.
 
 Delivery is at-least-once and unordered, with 8 attempts over about 24 hours; 20 consecutive failures disable the
 webhook (`resume` re-enables it). Event names: `email_sent`, `email_opened`, `email_link_clicked`, `reply_received`,

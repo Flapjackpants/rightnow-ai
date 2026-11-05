@@ -7,6 +7,7 @@ import { decrypt } from "../crypto";
 import { getEnv } from "../env";
 import { webhookEventName } from "./events";
 import { buildPayload } from "./payload";
+import { slackText } from "./slack";
 
 type Tx = Prisma.TransactionClient;
 /** The ACTIVE webhooks a dispatch batch loaded once. */
@@ -90,7 +91,13 @@ export async function enqueueDelivery(
   return w ? insert(tx, e, now, [webhookId], appUrl) : 0;
 }
 
-type Target = { url: string; secretEnc: string; headersEnc: string | null };
+type Target = {
+  url: string;
+  urlEnc: string | null;
+  format: string;
+  secretEnc: string;
+  headersEnc: string | null;
+};
 type Outcome = {
   status: number | null;
   latencyMs: number;
@@ -109,7 +116,9 @@ export async function postWebhook(
   const t = Math.floor(now.getTime() / 1000);
   const start = Date.now();
   try {
-    const r = await safeRequest(w.url, {
+    const sentBody =
+      w.format === "slack" ? JSON.stringify({ text: slackText(JSON.parse(body)) }) : body;
+    const r = await safeRequest(w.urlEnc ? decrypt(w.urlEnc) : w.url, {
       method: "POST",
       headers: {
         ...(w.headersEnc ? (JSON.parse(decrypt(w.headersEnc)) as Record<string, string>) : {}),
@@ -117,9 +126,9 @@ export async function postWebhook(
         "user-agent": "rightnow-webhooks/1",
         "x-rightnow-event-id": eventId,
         "x-rightnow-timestamp": String(t),
-        "x-rightnow-signature": sign(decrypt(w.secretEnc), t, body),
+        "x-rightnow-signature": sign(decrypt(w.secretEnc), t, sentBody),
       },
-      body,
+      body: sentBody,
       timeoutMs: 10_000,
       maxResponseBytes: 64 * 1024,
       allowPrivate: env.allowPrivate,
@@ -277,7 +286,14 @@ export async function deliverDue(
         (
           await prisma.webhook.findMany({
             where: { id: { in: [...new Set(claimed.map((d) => d.webhookId))] } },
-            select: { id: true, url: true, secretEnc: true, headersEnc: true },
+            select: {
+              id: true,
+              url: true,
+              urlEnc: true,
+              format: true,
+              secretEnc: true,
+              headersEnc: true,
+            },
           })
         ).map((w) => [w.id, w]),
       );

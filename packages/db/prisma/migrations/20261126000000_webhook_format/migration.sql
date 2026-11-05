@@ -1,0 +1,1 @@
+ALTER TABLE "Webhook" ADD COLUMN "format" TEXT NOT NULL DEFAULT 'json', ADD COLUMN "urlEnc" TEXT;

@@ -1381,6 +1381,8 @@ model Webhook {
   workspace           Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name                String?
   url                 String
+  format              String            @default("json")
+  urlEnc              String?
   events              String[]
   campaignId          String?
   secretEnc           String
