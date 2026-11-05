@@ -412,3 +412,73 @@ test("an unreadable stored config fails its own workspace only", async () => {
     (await db.prisma.lead.findFirstOrThrow({ where: { workspaceId: b.ws } })).crmSyncedAt,
   ).not.toBeNull();
 });
+
+test("pipelines parse loose HubSpot envelope and report bad JSON", async () => {
+  const { hubspotPipelines } = await import("../src/crm/hubspot");
+  const r: Req = async () =>
+    response(200, {
+      results: [
+        { id: "p", label: "Sales", stages: [{ id: "s", label: "Won", extra: true }], extra: true },
+      ],
+    });
+  expect(await hubspotPipelines("token", { request: r })).toEqual([
+    { id: "p", label: "Sales", stages: [{ id: "s", label: "Won" }] },
+  ]);
+  const bad: Req = async () => response(200, "{bad");
+  await expect(hubspotPipelines("token", { request: bad })).rejects.toMatchObject({
+    code: "bad_response",
+  });
+});
+
+test("pipeline listing selects supplied or stored token, writes nothing, and maps errors", async () => {
+  const { listHubspotPipelines } = await import("../src/crm/hubspot-sync");
+  const { ws } = await world("stored");
+  const before = await db.prisma.workspace.findUniqueOrThrow({ where: { id: ws } });
+  const r: Req = async (url, opts) => {
+    seen.push({ url, method: opts.method, token: opts.headers?.authorization ?? "" });
+    return response(200, { results: [] });
+  };
+  seen.length = 0;
+  expect(await listHubspotPipelines(db.prisma, ws, { token: "given" }, { request: r })).toEqual([]);
+  expect(await listHubspotPipelines(db.prisma, ws, {}, { request: r })).toEqual([]);
+  expect(seen.map((x) => x.token)).toEqual(["Bearer given", "Bearer stored"]);
+  expect(seen.map((x) => x.url)).toEqual([
+    "https://api.hubapi.com/crm/v3/pipelines/deals",
+    "https://api.hubapi.com/crm/v3/pipelines/deals",
+  ]);
+  expect(
+    (await db.prisma.workspace.findUniqueOrThrow({ where: { id: ws } })).crmSyncConfigEnc,
+  ).toBe(before.crmSyncConfigEnc);
+  await clearCrmSyncSettings(db.prisma, clock, ws, null);
+  await expect(listHubspotPipelines(db.prisma, ws, {}, { request: r })).rejects.toMatchObject({
+    status: 400,
+    message: "token_required",
+  });
+  for (const [status, expected] of [
+    [401, 400],
+    [403, 400],
+    [500, 502],
+  ] as const) {
+    const bad: Req = async () => response(status, {});
+    await expect(
+      listHubspotPipelines(db.prisma, ws, { token: "given" }, { request: bad }),
+    ).rejects.toMatchObject({ status: expected });
+  }
+});
+
+test("settings maps HubSpot network failure to clean 502", async () => {
+  const { ws } = await world();
+  const bad: Req = async () => {
+    throw new Error("private network detail");
+  };
+  await expect(
+    setCrmSyncSettings(
+      db.prisma,
+      clock,
+      ws,
+      null,
+      { pipelineId: "p", stageMap: {} },
+      { request: bad },
+    ),
+  ).rejects.toMatchObject({ status: 502, message: "request_failed" });
+});

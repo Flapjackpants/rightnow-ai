@@ -388,6 +388,10 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | PUT | `/settings/ai` | ADMIN | session only |
 | GET | `/settings/apollo` | ADMIN | session only |
 | PUT | `/settings/apollo` | ADMIN | session only |
+| GET | `/settings/hubspot` | ADMIN | session only |
+| PUT | `/settings/hubspot` | ADMIN | session only |
+| DELETE | `/settings/hubspot` | ADMIN | session only |
+| POST | `/settings/hubspot/pipelines` | ADMIN | session only |
 | GET | `/settings/verifier` | ADMIN | session only |
 | PUT | `/settings/verifier` | ADMIN | session only |
 | GET | `/settings/workspace` | ADMIN | session only |

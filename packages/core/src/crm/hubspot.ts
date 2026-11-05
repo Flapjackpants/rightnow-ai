@@ -161,6 +161,33 @@ export async function ensureDealProperty(token: string, o: HubspotOpts = {}): Pr
   );
   if (made.status !== 201 && made.status !== 409) throw new HubspotError(codeFor(made.status));
 }
+const pipelinesResponse = z
+  .object({
+    results: z.array(
+      z
+        .object({
+          id: z.string(),
+          label: z.string(),
+          stages: z.array(z.object({ id: z.string(), label: z.string() }).loose()),
+        })
+        .loose(),
+    ),
+  })
+  .loose();
+export async function hubspotPipelines(
+  token: string,
+  o: HubspotOpts = {},
+): Promise<{ id: string; label: string; stages: { id: string; label: string }[] }[]> {
+  const res = await call(token, "/crm/v3/pipelines/deals", "GET", undefined, o);
+  if (res.status !== 200) throw new HubspotError(codeFor(res.status));
+  const parsed = pipelinesResponse.safeParse(parse(res.body));
+  if (!parsed.success) throw new HubspotError("bad_response");
+  return parsed.data.results.map((p) => ({
+    id: p.id,
+    label: p.label,
+    stages: p.stages.map((s) => ({ id: s.id, label: s.label })),
+  }));
+}
 const companyPage = z
   .object({
     results: z.array(

@@ -12,6 +12,7 @@ import {
   customerDomains,
   ensureDealProperty,
   HubspotError,
+  hubspotPipelines,
   type HubspotOpts,
   upsertContacts,
   upsertDeals,
@@ -22,9 +23,40 @@ export const crmSyncInput = z.strictObject({
   pipelineId: z.string().min(1).max(100),
   stageMap: z.record(z.string(), z.string()),
 });
+export const hubspotPipelinesInput = z.strictObject({
+  token: z.string().min(1).max(500).optional(),
+});
 type Config = { token: string; pipelineId: string; stageMap: Record<string, string> };
 type Actor = string | null | undefined;
 const config = (enc: string): Config => JSON.parse(decrypt(enc)) as Config;
+const hubspotApiError = (e: unknown): never => {
+  if (e instanceof HubspotError)
+    throw new AccountError(
+      e.code === "hubspot_auth" || e.code === "hubspot_scope" ? 400 : 502,
+      e.code,
+    );
+  throw e;
+};
+
+export async function listHubspotPipelines(
+  prisma: PrismaClient,
+  ws: string,
+  input: unknown,
+  o: HubspotOpts = {},
+): ReturnType<typeof hubspotPipelines> {
+  const v = hubspotPipelinesInput.parse(input);
+  const old = await prisma.workspace.findUniqueOrThrow({
+    where: { id: ws },
+    select: { crmSyncConfigEnc: true },
+  });
+  const token = v.token ?? (old.crmSyncConfigEnc ? config(old.crmSyncConfigEnc).token : null);
+  if (!token) throw new AccountError(400, "token_required");
+  try {
+    return await hubspotPipelines(token, o);
+  } catch (e) {
+    return hubspotApiError(e);
+  }
+}
 
 export async function setCrmSyncSettings(
   prisma: PrismaClient,
@@ -50,9 +82,7 @@ export async function setCrmSyncSettings(
   try {
     await ensureDealProperty(token, o);
   } catch (e) {
-    if (e instanceof HubspotError && (e.code === "hubspot_auth" || e.code === "hubspot_scope"))
-      throw new AccountError(400, e.code);
-    throw e;
+    hubspotApiError(e);
   }
   await prisma.$transaction(async (tx) => {
     await tx.workspace.update({

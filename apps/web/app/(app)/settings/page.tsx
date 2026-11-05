@@ -1,4 +1,6 @@
 import {
+  ensureStages,
+  getCrmSyncSettings,
   getAiSettings,
   getVerifierSettings,
   getWorkspaceSettings,
@@ -11,6 +13,7 @@ import { redirect } from "next/navigation";
 import { AiSettings } from "../../../components/ai-settings";
 import { AuditLog } from "../../../components/audit-log";
 import { Callout } from "../../../components/callout";
+import { HubspotSettings } from "../../../components/hubspot-settings";
 import { LabelsSettings } from "../../../components/labels-settings";
 import { MembersSettings } from "../../../components/members-settings";
 import { PageHeader } from "../../../components/page-header";
@@ -36,6 +39,8 @@ export default async function Page({
   const s = admin ? await getWorkspaceSettings(prisma, ws) : null;
   const verifier = admin ? await getVerifierSettings(prisma, ws) : null;
   const ai = admin ? await getAiSettings(prisma, ws) : null;
+  const crm = admin ? await getCrmSyncSettings(prisma, ws) : null;
+  const stages = admin ? await ensureStages(prisma, ws) : [];
   const me = await prisma.user.findUniqueOrThrow({
     where: { id: info.userId },
     select: { twoFactorEnabled: true },
@@ -69,6 +74,7 @@ export default async function Page({
     ["security", "Security", true],
     ["ai", "AI", admin],
     ["verifier", "Email verification", !!verifier],
+    ["hubspot", "HubSpot", !!crm],
     ["audit-log", "Audit log", member],
   ].filter(([, , on]) => on) as [string, string, boolean][];
   return (
@@ -115,6 +121,15 @@ export default async function Page({
           <SecuritySettings enabled={me.twoFactorEnabled} />
           {admin && <AiSettings {...(ai ?? {})} />}
           {verifier && <VerifierSettings {...verifier} />}
+          {crm && (
+            <HubspotSettings
+              {...crm}
+              lastRunAt={crm.lastRunAt?.toISOString() ?? null}
+              lastErrorAt={crm.lastErrorAt?.toISOString() ?? null}
+              customersPulledAt={crm.customersPulledAt?.toISOString() ?? null}
+              stages={stages.map(({ id, name }) => ({ id, name }))}
+            />
+          )}
           {member && <AuditLog workspaceId={ws} action={q.action} cursor={q.cursor} />}
         </div>
       </div>
