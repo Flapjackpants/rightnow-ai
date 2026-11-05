@@ -9,6 +9,7 @@ export const TRIGGERS: Record<string, string> = {
   unsubscribed: "Unsubscribed",
   bounced: "Bounced",
   campaign_completed: "Campaign completed",
+  escalation_overdue: "Escalation unanswered",
   account_error: "Mailbox error",
   send_failure_threshold: "Send failure threshold",
   quota_reached: "Daily limit reached",
@@ -31,6 +32,7 @@ export const ACTION_TYPES: Record<string, { label: string; fields: Field[] }> = 
     fields: [
       { key: "title", label: "Title", kind: "text", required: true },
       { key: "dueInDays", label: "Due in days", kind: "number" },
+      { key: "escalateAfterHours", label: "Alert again after hours", kind: "number" },
       { key: "assigneeId", label: "Assignee", kind: "select", source: "members" },
     ],
   },

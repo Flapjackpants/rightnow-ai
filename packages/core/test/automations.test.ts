@@ -138,6 +138,7 @@ describe("triggers", () => {
       ["unsubscribed", fake("UNSUBSCRIBE"), [fake("COMPLAINT")]],
       ["bounced", fake("BOUNCE_SOFT"), [fake("BOUNCE_UNKNOWN")]],
       ["campaign_completed", fake("CAMPAIGN_COMPLETED"), [fake("ACCEPTED")]],
+      ["escalation_overdue", fake("ESCALATION_OVERDUE"), [fake("ACCEPTED")]],
       ["account_error", fake("ACCOUNT_ERROR", { reason: "auth" }), [fake("SEND_FAILED")]],
       [
         "send_failure_threshold",
@@ -409,6 +410,18 @@ describe("actions", () => {
 });
 
 describe("owner assignment strategies", () => {
+  test("positive reply keeps the existing owner under round robin", async () => {
+    const w = await world();
+    const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: a } });
+    await rule(w, "positive_reply", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [a, b] },
+    ]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+    await drain();
+    expect((await P().lead.findUniqueOrThrow({ where: { id: w.lead!.id } })).ownerId).toBe(a);
+  });
+
   test("round robin rotates, skips an owned lead, and keeps the cursor", async () => {
     const w = await world();
     const [a, b] = await Promise.all([member(w.ws), member(w.ws)]);
@@ -765,6 +778,10 @@ describe("validation", () => {
       message: "action_not_applicable",
     });
     expect(await err(rule(w, "label_added", [{ type: "pause_account" }]))).toEqual({
+      status: 400,
+      message: "action_not_applicable",
+    });
+    expect(await err(rule(w, "escalation_overdue", [{ type: "pause_account" }]))).toEqual({
       status: 400,
       message: "action_not_applicable",
     });

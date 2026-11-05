@@ -129,10 +129,12 @@ create and on `rotate-secret`; rotation takes effect immediately with no overlap
 
 Delivery is at-least-once and unordered, with 8 attempts over about 24 hours; 20 consecutive failures disable the
 webhook (`resume` re-enables it). Event names: `email_sent`, `email_opened`, `email_link_clicked`, `reply_received`,
-`auto_reply_received`, `email_bounced`, `lead_unsubscribed`, `account_error`, `campaign_completed`, `deal_won`,
+`auto_reply_received`, `email_bounced`, `lead_unsubscribed`, `account_error`, `campaign_completed`, `escalation_overdue`, `deal_won`,
 `deal_lost`, `quota_reached`, the interest events `lead_neutral`, `lead_out_of_office`, `lead_interested`,
 `lead_meeting_booked`, `lead_meeting_completed`, `lead_closed`, `lead_not_interested`, `lead_wrong_person`,
 `lead_lost`, `lead_no_show`, a lead label's name, or `all_events`.
+
+`escalation_overdue` is emitted up to three times when a task with `escalateAfterHours` has no direct answer to the lead. Its payload includes `task_title` and `alert_count`; automation rules can reassign the lead and task.
 
 Payload: `event_id, timestamp, event_type, workspace, campaign_id, campaign_name`, and when relevant `lead_email,
 email_account, unibox_url, step, variant, is_first, email_id, email_subject, email_text, email_html,

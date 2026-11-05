@@ -965,6 +965,7 @@ enum EventType {
   ACCOUNT_ERROR
   QUOTA_REACHED
   CAMPAIGN_COMPLETED
+  ESCALATION_OVERDUE
   LABEL_ADDED
 }
 
@@ -1299,7 +1300,7 @@ enum TaskStatus {
   AWAITING_APPROVAL // PS-CRM-08; approving sets OPEN
 }
 
-/** D41: a reminder is the task's dueAt; there are no notifications. */
+/** D41: dueAt is the task reminder; escalation alerts are separate Event rows. */
 model Task {
   id            String       @id @default(cuid())
   workspaceId   String
@@ -1307,6 +1308,9 @@ model Task {
   title         String
   body          String?
   dueAt         DateTime?
+  escalateAfterHours Int?
+  escalationAlerts Int @default(0)
+  nextEscalationAt DateTime?
   assigneeId    String?
   status        TaskStatus   @default(OPEN)
   leadId        String?
@@ -1319,6 +1323,7 @@ model Task {
   updatedAt     DateTime     @updatedAt
 
   @@index([workspaceId, status, dueAt])
+  @@index([nextEscalationAt])
   @@index([leadId])
   @@index([opportunityId])
 }

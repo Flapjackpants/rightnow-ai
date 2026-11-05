@@ -87,6 +87,16 @@ test.each([
   ],
   [{ event_type: "custom", email_account: "box@b.test" }, "custom: box@b.test"],
   [{ event_type: "custom" }, "custom: workspace"],
+  [
+    {
+      event_type: "escalation_overdue",
+      lead_email: "a@b.test",
+      alert_count: 2,
+      task_title: "Call <lead>",
+      unibox_url: "https://app.test/inbox",
+    },
+    ":rotating_light: No answer yet from your team: a@b.test, alert 2 <https://app.test/inbox|Open in inbox>\n> Call &lt;lead&gt;",
+  ],
 ])("slackText formats %j", (payload, wanted) => expect(slackText(payload)).toBe(wanted));
 
 test("escapes payload strings, limits snippets, ignores non-strings and unsafe links", () => {

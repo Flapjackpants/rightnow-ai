@@ -36,6 +36,9 @@ export function slackText(p: Record<string, unknown>): string {
     case "quota_reached":
       line = `:hourglass_flowing_sand: Daily quota reached: ${account}${val("campaign_name") ? ` on ${val("campaign_name")}` : ""}`;
       break;
+    case "escalation_overdue":
+      line = `:rotating_light: No answer yet from your team: ${who}, alert ${typeof p.alert_count === "number" ? String(p.alert_count) : ""}`;
+      break;
     default:
       line = `${val("event_type")}: ${who || account || "workspace"}`;
   }
@@ -43,5 +46,7 @@ export function slackText(p: Record<string, unknown>): string {
     line += ` <${p.unibox_url}|Open in inbox>`;
   if (typeof p.reply_text_snippet === "string")
     line += `\n> ${esc(p.reply_text_snippet.slice(0, 200))}`;
+  else if (p.event_type === "escalation_overdue" && typeof p.task_title === "string")
+    line += `\n> ${esc(p.task_title)}`;
   return line;
 }

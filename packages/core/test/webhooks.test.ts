@@ -413,6 +413,7 @@ describe("payload", () => {
     expect(f("UNSUBSCRIBE")).toBe("lead_unsubscribed");
     expect(f("ACCOUNT_ERROR")).toBe("account_error");
     expect(f("CAMPAIGN_COMPLETED")).toBe("campaign_completed");
+    expect(f("ESCALATION_OVERDUE")).toBe("escalation_overdue");
     expect(f("DEAL_WON")).toBe("deal_won");
     expect(f("DEAL_LOST")).toBe("deal_lost");
     expect(f("QUOTA_REACHED")).toBe("quota_reached");

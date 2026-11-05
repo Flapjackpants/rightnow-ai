@@ -83,6 +83,7 @@ export * from "./mail/sync";
 export * from "./crm/stages";
 export * from "./crm/opportunities";
 export * from "./crm/tasks";
+export * from "./crm/escalation";
 export * from "./crm/activity";
 export * from "./analytics/query";
 export * from "./analytics/metrics";
