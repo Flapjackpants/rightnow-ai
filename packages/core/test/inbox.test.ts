@@ -813,4 +813,23 @@ describe("notes, macros and erasure (I11)", () => {
       status: 409,
     });
   });
+
+  test("owner variables render for a member and stay empty without an owner", async () => {
+    const { ws, a } = await world();
+    const l = await lead(ws, { firstName: "Dana" });
+    const t = await thread(ws, a, { leadId: l.id });
+    const m = await createMacro(P(), ws, "u1", {
+      name: "owner",
+      body: "{{ownerName}} / {{ownerEmail}}",
+    });
+    expect((await renderMacro(P(), ws, m.id, t.id)).text).toBe(" / ");
+    const u = await P().user.create({
+      data: { id: `owner-${t.id}`, name: "Alex", email: `alex-${t.id}@x.io` },
+    });
+    await P().member.create({
+      data: { id: `member-${t.id}`, workspaceId: ws, userId: u.id, role: "member" },
+    });
+    await P().lead.update({ where: { id: l.id }, data: { ownerId: u.id } });
+    expect((await renderMacro(P(), ws, m.id, t.id)).text).toBe(`Alex / ${u.email}`);
+  });
 });

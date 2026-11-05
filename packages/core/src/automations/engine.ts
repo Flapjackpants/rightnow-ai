@@ -304,6 +304,45 @@ export const ACTIONS: Record<string, Action> = {
       });
     },
   ),
+  forward_to_owner: act("inbox:write", true, none, async (tx, _clock, e) => {
+    const lead = await tx.lead.findFirst({
+      where: { id: e.leadId!, workspaceId: e.workspaceId },
+      select: { ownerId: true },
+    });
+    if (!lead?.ownerId) throw coded("no_owner");
+    const member = await tx.member.findFirst({
+      where: { workspaceId: e.workspaceId, userId: lead.ownerId },
+      select: { user: { select: { email: true } } },
+    });
+    if (!member) throw coded("no_owner");
+    const threadId = e.messageId
+      ? (
+          await tx.message.findFirst({
+            where: { id: e.messageId, workspaceId: e.workspaceId },
+            select: { threadId: true },
+          })
+        )?.threadId
+      : (
+          await tx.thread.findFirst({
+            where: {
+              workspaceId: e.workspaceId,
+              leadId: e.leadId!,
+              deletedAt: null,
+              lastInboundAt: { not: null },
+            },
+            orderBy: { lastInboundAt: "desc" },
+            select: { id: true },
+          })
+        )?.id;
+    if (!threadId) return;
+    await tx.backgroundJob.create({
+      data: {
+        workspaceId: e.workspaceId,
+        kind: "thread_forward",
+        input: { threadId, to: member.user.email },
+      },
+    });
+  }),
   add_tag: act(
     "leads:write",
     true,

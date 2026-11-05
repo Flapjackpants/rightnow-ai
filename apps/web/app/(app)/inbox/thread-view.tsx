@@ -402,6 +402,7 @@ export function ThreadView({
           {canEdit && (
             <Composer
               threadId={id}
+              hasOwner={!!lead?.ownerId}
               onResult={result}
               onSent={() => {
                 void load();

@@ -25,6 +25,7 @@ export type Field = {
   required?: boolean;
 };
 export const ACTION_TYPES: Record<string, { label: string; fields: Field[] }> = {
+  forward_to_owner: { label: "Forward the thread to the owner", fields: [] },
   create_task: {
     label: "Create task",
     fields: [

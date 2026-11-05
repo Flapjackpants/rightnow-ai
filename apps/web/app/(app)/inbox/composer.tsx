@@ -45,6 +45,7 @@ const MESSAGES: Record<string, string> = {
   to_required: "Enter who to forward this to.",
   invalid_message: "The message could not be built. Nothing was sent.",
   reply_in_progress: "A reply to this conversation is already being sent. Nothing was sent.",
+  no_owner: "This lead has no owner yet.",
 };
 /** Never retried automatically: an uncertain or unrecorded send is reported and left to the person. */
 const sendError = (j: Record<string, unknown>) =>
@@ -54,15 +55,18 @@ const sendError = (j: Record<string, unknown>) =>
 
 export function Composer({
   threadId,
+  hasOwner,
   onResult,
   onSent,
 }: {
   threadId: string;
+  hasOwner: boolean;
   onResult: (ok: string, err: string) => void;
   onSent: () => void;
 }) {
   const [mode, setMode] = useState("reply");
   const [to, setTo] = useState("");
+  const [cc, setCc] = useState("");
   const [body, setBody] = useState(""); // editor html: the server sanitizes it and derives the text part
   const [files, setFiles] = useState<File[]>([]);
   const [macros, setMacros] = useState<Macro[]>([]);
@@ -85,6 +89,16 @@ export function Composer({
     else onResult("", "The macro could not be filled in for this conversation.");
   }
 
+  async function handoff() {
+    setBusy(true);
+    const r = await call(`/api/v1/inbox/threads/${threadId}/handoff`, "POST");
+    setBusy(false);
+    if (!r.ok) return onResult("", sendError(r.json));
+    setMode("reply");
+    setBody((b) => b + toHtml(String(r.json.text)));
+    setCc(String(r.json.cc));
+  }
+
   async function send() {
     setBusy(true);
     setHeld(false);
@@ -93,6 +107,7 @@ export function Composer({
     f.set("mode", mode);
     f.set("html", body);
     if (mode === "forward") f.set("to", JSON.stringify(to.split(/[,;\s]+/).filter(Boolean)));
+    if (cc) f.set("cc", JSON.stringify([cc]));
     files.forEach((x) => f.append("attachments", x));
     const res = await fetch(`/api/v1/inbox/threads/${threadId}/reply`, {
       method: "POST",
@@ -114,6 +129,7 @@ export function Composer({
     }
     setBody("");
     setTo("");
+    setCc("");
     setFiles([]);
     setFileKey((k) => k + 1);
     if (res?.ok) onResult(mode === "forward" ? "Forward sent." : "Reply sent.", "");
@@ -162,6 +178,17 @@ export function Composer({
           <Button type="button" variant="ghost" size="sm" onClick={() => setManage(true)}>
             Manage macros
           </Button>
+          {hasOwner && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              disabled={busy}
+              onClick={() => void handoff()}
+            >
+              Hand off to owner
+            </Button>
+          )}
           <AiAssist
             label="Suggest reply"
             path="reply-draft"
@@ -177,6 +204,14 @@ export function Composer({
             value={to}
             onChange={(e) => setTo(e.target.value)}
           />
+        )}
+        {cc && (
+          <div className="flex items-center gap-2 text-sm">
+            CC: {cc}
+            <Button type="button" variant="ghost" size="sm" onClick={() => setCc("")}>
+              Remove CC
+            </Button>
+          </div>
         )}
         <RichText id="reply-body" label="Reply" value={body} onChange={setBody} />
         <div className="flex flex-wrap items-center gap-2">

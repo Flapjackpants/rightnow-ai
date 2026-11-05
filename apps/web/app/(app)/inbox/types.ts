@@ -44,6 +44,7 @@ export type Detail = Omit<ThreadRow, "messages"> & {
   leadNotes: Note[];
   lead: {
     id: string;
+    ownerId: string | null;
     email: string;
     firstName: string | null;
     lastName: string | null;

@@ -8755,6 +8755,38 @@
         }
       }
     },
+    "/inbox/threads/{id}/handoff": {
+      "post": {
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-role": "VIEWER",
+        "x-scope": "inbox:read",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/inbox/threads/{id}/read-all": {
       "post": {
         "security": [

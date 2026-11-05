@@ -1053,7 +1053,7 @@
    "id": "P9-T10",
    "phase": 9,
    "title": "Auto-forward and handoff template",
-   "status": "pending",
+   "status": "done",
    "deps": [
     "P9-T09"
    ],

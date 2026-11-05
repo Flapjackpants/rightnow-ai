@@ -162,14 +162,14 @@ export async function deleteView(db: Db, ws: string, actorId: Actor, id: string)
   await audit(db, { workspaceId: ws, actorId }, "inbox_view.delete", id);
 }
 
-/** The macro filled in for the thread's lead and sending mailbox: `{text, html}` (the same renderer campaigns use). */
-export async function renderMacro(db: Db, ws: string, id: string, threadId: string) {
-  const macro = await db.macro.findFirst({ where: { id, workspaceId: ws } });
-  const t = await db.thread.findFirst({
-    where: { id: threadId, workspaceId: ws, deletedAt: null },
-    include: { account: true },
-  });
-  if (!macro || !t) throw notFound();
+async function renderContext(
+  db: Db,
+  ws: string,
+  t: {
+    leadId: string | null;
+    account: { firstName: string; lastName: string; email: string };
+  },
+) {
   const lead = t.leadId
     ? await db.lead.findFirst({ where: { id: t.leadId, workspaceId: ws } })
     : null;
@@ -180,6 +180,14 @@ export async function renderMacro(db: Db, ws: string, id: string, threadId: stri
       Object.assign(fields, custom as Record<string, string | number | boolean | null>);
     for (const k of RENDER_LEAD_FIELDS) fields[k] = lead[k];
   }
+  const owner = lead?.ownerId
+    ? await db.member.findFirst({
+        where: { workspaceId: ws, userId: lead.ownerId },
+        select: { user: { select: { name: true, email: true } } },
+      })
+    : null;
+  fields.ownerName = owner?.user.name ?? null;
+  fields.ownerEmail = owner?.user.email ?? null;
   const ctx = {
     lead: fields,
     sender: {
@@ -188,6 +196,18 @@ export async function renderMacro(db: Db, ws: string, id: string, threadId: stri
       email: t.account.email,
     },
   };
+  return { ctx, lead, owner };
+}
+
+/** The macro filled in for the thread's lead and sending mailbox: `{text, html}` (the same renderer campaigns use). */
+export async function renderMacro(db: Db, ws: string, id: string, threadId: string) {
+  const macro = await db.macro.findFirst({ where: { id, workspaceId: ws } });
+  const t = await db.thread.findFirst({
+    where: { id: threadId, workspaceId: ws, deletedAt: null },
+    include: { account: true },
+  });
+  if (!macro || !t) throw notFound();
+  const { ctx } = await renderContext(db, ws, t);
   try {
     return {
       text: render(macro.body, ctx, { seed: threadId, html: false }),
@@ -198,4 +218,26 @@ export async function renderMacro(db: Db, ws: string, id: string, threadId: stri
       throw new AccountError(400, "invalid_template", { issues: e.issues });
     throw e;
   }
+}
+
+const HANDOFF =
+  "Hi {{firstName|there}},\n\nThanks for your reply. I'm bringing in {{ownerName}}, who will take it from here. You can reach them directly at {{ownerEmail}}.\n\nBest,\n{{sendingAccountFirstName}}";
+
+export async function handoffDraft(
+  db: Db,
+  ws: string,
+  threadId: string,
+): Promise<{ text: string; cc: string; ownerName: string | null }> {
+  const t = await db.thread.findFirst({
+    where: { id: threadId, workspaceId: ws, deletedAt: null },
+    include: { account: true },
+  });
+  if (!t) throw notFound();
+  const { ctx, lead, owner } = await renderContext(db, ws, t);
+  if (!lead || !owner) throw new AccountError(409, "no_owner");
+  return {
+    text: render(HANDOFF, ctx, { seed: threadId, html: false }),
+    cc: owner.user.email,
+    ownerName: owner.user.name,
+  };
 }

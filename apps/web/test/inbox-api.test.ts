@@ -60,6 +60,7 @@ beforeAll(async () => {
     macros: await import("../app/api/v1/inbox/macros/route"),
     macro: await import("../app/api/v1/inbox/macros/[id]/route"),
     render: await import("../app/api/v1/inbox/macros/[id]/render/route"),
+    handoff: await import("../app/api/v1/inbox/threads/[id]/handoff/route"),
     views: await import("../app/api/v1/inbox/views/route"),
     view: await import("../app/api/v1/inbox/views/[id]/route"),
   } as unknown as typeof r;
@@ -375,6 +376,50 @@ it("reply route: multipart in, Fake provider out, size and length rules", async 
   const full = await r.reply!.POST!(await multipart({ mode: "reply", html: "x" }), p(cap.t.id));
   expect(full.status).toBe(409);
   expect(await json(full)).toMatchObject({ error: "provider_cap" });
+});
+
+it("handoff returns an editable draft, CCs the owner on a later reply, and sends nothing itself", async () => {
+  const s = await seed(workspaceId);
+  const owner = await db.prisma.user.findFirstOrThrow({ where: { email: "owner@x.io" } });
+  await db.prisma.lead.update({ where: { id: s.lead.id }, data: { ownerId: owner.id } });
+  const draft = await r.handoff!.POST!(req("POST", "x"), p(s.t.id));
+  expect(draft.status).toBe(200);
+  expect(await json(draft)).toMatchObject({ cc: owner.email, ownerName: owner.name });
+  expect((await json(await r.handoff!.POST!(req("POST", "x"), p(s.t.id)))).text).toContain("Dana");
+  expect(await getFakeProvider(s.a.email).sentRaw()).toHaveLength(0);
+  const f = new FormData();
+  f.set("mode", "reply");
+  f.set("html", "<p>Thanks</p>");
+  f.set("cc", JSON.stringify([owner.email]));
+  const wrapped = new Response(f);
+  const bytes = await wrapped.arrayBuffer();
+  const request = new Request(`${ORIGIN}/x`, {
+    method: "POST",
+    headers: {
+      cookie,
+      origin: ORIGIN,
+      "content-type": wrapped.headers.get("content-type")!,
+      "content-length": String(bytes.byteLength),
+    },
+    body: bytes,
+  });
+  const sent = await r.reply!.POST!(request, p(s.t.id));
+  expect(sent.status).toBe(200);
+  expect(
+    await db.prisma.message.findUniqueOrThrow({ where: { id: (await json(sent)).messageId } }),
+  ).toMatchObject({ cc: [owner.email] });
+});
+
+it("handoff rejects a missing owner and a foreign thread", async () => {
+  const mine = await seed(workspaceId);
+  const noOwner = await r.handoff!.POST!(req("POST", "x"), p(mine.t.id));
+  expect(noOwner.status).toBe(409);
+  expect(await json(noOwner)).toMatchObject({ error: "no_owner" });
+  const other = await db.prisma.workspace.create({
+    data: { name: "Other", slug: `handoff-${randomBytes(4).toString("hex")}` },
+  });
+  const foreign = await seed(other.id);
+  expect((await r.handoff!.POST!(req("POST", "x"), p(foreign.t.id))).status).toBe(404);
 });
 
 it("attachment download: attachment disposition, nosniff, a safe type and the stored bytes", async () => {

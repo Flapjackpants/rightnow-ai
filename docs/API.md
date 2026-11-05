@@ -194,6 +194,7 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 "session only" routes reject API keys. The role is the minimum for that method; keys count as MEMBER.
 
 `assign_owner` accepts a single `userId`, a `round_robin` strategy with `userIds`, or a `territory` strategy with country/region entries and an optional fallback owner. Strategy assignments keep an existing owner.
+`forward_to_owner` queues a forward of the latest inbound thread to the lead's current owner. It sends nothing to the prospect and never retries an uncertain send.
 
 <!-- routes:start -->
 | Method | Path | Role | Scope |
@@ -323,6 +324,7 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | DELETE | `/inbox/threads/{id}` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/attach-lead` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/create-lead` | MEMBER | `inbox:write` |
+| POST | `/inbox/threads/{id}/handoff` | VIEWER | `inbox:read` |
 | POST | `/inbox/threads/{id}/read-all` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/reply` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/bulk` | MEMBER | `inbox:write` |

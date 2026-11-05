@@ -202,6 +202,7 @@ export async function getThread(db: Db, ws: string, id: string) {
         select: {
           id: true,
           email: true,
+          ownerId: true,
           firstName: true,
           lastName: true,
           companyName: true,

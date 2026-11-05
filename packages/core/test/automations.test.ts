@@ -597,6 +597,100 @@ describe("owner assignment strategies", () => {
   });
 });
 
+describe("forward_to_owner", () => {
+  test("queues one forward for the event message and never sends in dispatch", async () => {
+    const w = await world();
+    const owner = await member(w.ws);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: owner } });
+    const th = await P().thread.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        leadId: w.lead!.id,
+        subject: "s",
+        lastMessageAt: T,
+        lastInboundAt: T,
+      },
+    });
+    const m = await P().message.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        threadId: th.id,
+        rfcMessageId: `<forward-${++n}@x>`,
+        direction: "IN",
+        kind: "REPLY",
+        folder: "INBOX",
+        fromEmail: w.lead!.email,
+        to: [w.accounts[0]!.email],
+        subject: "s",
+        text: "hot",
+        sentAt: T,
+      },
+    });
+    await rule(w, "positive_reply", [{ type: "forward_to_owner" }]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, messageId: m.id, meta: { to: 1 } });
+    await drain();
+    await drain();
+    expect(
+      await P().backgroundJob.findMany({ where: { workspaceId: w.ws, kind: "thread_forward" } }),
+    ).toMatchObject([{ status: "PENDING", input: { threadId: th.id, to: `${owner}@x.io` } }]);
+    expect(await P().message.count({ where: { threadId: th.id, direction: "OUT" } })).toBe(0);
+  });
+
+  test("sees a round robin assignment made earlier in the rule", async () => {
+    const w = await world();
+    const owner = await member(w.ws);
+    const th = await P().thread.create({
+      data: {
+        workspaceId: w.ws,
+        accountId: w.accounts[0]!.id,
+        leadId: w.lead!.id,
+        subject: "s",
+        lastMessageAt: T,
+        lastInboundAt: T,
+      },
+    });
+    await rule(w, "positive_reply", [
+      { type: "assign_owner", strategy: "round_robin", userIds: [owner] },
+      { type: "forward_to_owner" },
+    ]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+    await drain();
+    expect(
+      (await P().backgroundJob.findFirst({ where: { workspaceId: w.ws, kind: "thread_forward" } }))
+        ?.input,
+    ).toEqual({ threadId: th.id, to: `${owner}@x.io` });
+  });
+
+  test("missing and departed owners fail without jobs", async () => {
+    for (const departed of [false, true]) {
+      const w = await world();
+      if (departed) {
+        const owner = await member(w.ws);
+        await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: owner } });
+        await P().member.deleteMany({ where: { workspaceId: w.ws, userId: owner } });
+      }
+      await rule(w, "positive_reply", [{ type: "forward_to_owner" }]);
+      await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+      await drain();
+      expect(await runs(w.ws)).toMatchObject([{ status: "FAILED", error: "no_owner" }]);
+      expect(await P().backgroundJob.count({ where: { workspaceId: w.ws } })).toBe(0);
+    }
+  });
+
+  test("no inbound thread completes without a forward", async () => {
+    const w = await world();
+    const owner = await member(w.ws);
+    await P().lead.update({ where: { id: w.lead!.id }, data: { ownerId: owner } });
+    await rule(w, "positive_reply", [{ type: "forward_to_owner" }]);
+    await ev(w, "INTEREST_CHANGED", { leadId: w.lead!.id, meta: { to: 1 } });
+    await drain();
+    expect(await runs(w.ws)).toMatchObject([{ status: "OK" }]);
+    expect(await P().backgroundJob.count({ where: { workspaceId: w.ws } })).toBe(0);
+  });
+});
+
 describe("validation", () => {
   test("unknown trigger, 11 actions, foreign references, the 51st rule", async () => {
     const w = await world();
@@ -1226,6 +1320,7 @@ describe("A12: no automation sends mail by itself", () => {
         "create_opportunity",
         "create_task",
         "enroll_campaign",
+        "forward_to_owner",
         "move_to_subsequence",
         "pause_account",
         "send_webhook",

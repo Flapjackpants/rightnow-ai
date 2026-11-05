@@ -21,7 +21,11 @@ const SESSION_ONLY: Record<string, string> = {
 };
 
 /** POST handlers that only read (they render or preview), so they take a `:read` scope. */
-const READ_POSTS = new Set(["POST /campaigns/{id}/preview", "POST /inbox/macros/{id}/render"]);
+const READ_POSTS = new Set([
+  "POST /campaigns/{id}/preview",
+  "POST /inbox/macros/{id}/render",
+  "POST /inbox/threads/{id}/handoff",
+]);
 
 /** Objects that stay open on purpose: rule actions are validated per `type` by the engine's ACTIONS table. */
 const OPEN_BY_DESIGN = new Set(["#/properties/actions/items"]);
