@@ -203,7 +203,7 @@ export function HubspotSettings(s: Props) {
             </Button>
           )}
           <Button type="submit" disabled={busy || !pipelineId}>
-            Save
+            Save HubSpot settings
           </Button>
         </div>
       </form>

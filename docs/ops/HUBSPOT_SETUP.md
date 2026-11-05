@@ -21,7 +21,7 @@ New legacy private apps cannot be created after 2026-10-26. Existing legacy priv
 
 ## 2. Connect in rightnow
 
-In Settings > HubSpot, enter the service key and select **Load pipelines**. Choose a HubSpot pipeline. For each rightnow stage, choose the matching HubSpot stage or **Do not sync**, then select **Save**. The key is write-only; rightnow never shows it again. To stop syncing, select **Disconnect** and confirm.
+In Settings > HubSpot, enter the service key and select **Load pipelines**. Choose a HubSpot pipeline. For each rightnow stage, choose the matching HubSpot stage or **Do not sync**, then select **Save HubSpot settings**. The key is write-only; rightnow never shows it again. To stop syncing, select **Disconnect** and confirm.
 
 Use HubSpot as the master for customers and rightnow as the master for outreach deals. Turn off rightnow's built-in auto-deals (`positive_reply_opportunity`) only if you want no deals pushed.
 
