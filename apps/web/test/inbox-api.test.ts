@@ -50,6 +50,7 @@ beforeAll(async () => {
     thread: await import("../app/api/v1/inbox/threads/[id]/route"),
     readAll: await import("../app/api/v1/inbox/threads/[id]/read-all/route"),
     attach: await import("../app/api/v1/inbox/threads/[id]/attach-lead/route"),
+    createLead: await import("../app/api/v1/inbox/threads/[id]/create-lead/route"),
     reply: await import("../app/api/v1/inbox/threads/[id]/reply/route"),
     bulk: await import("../app/api/v1/inbox/threads/bulk/route"),
     unread: await import("../app/api/v1/inbox/unread-count/route"),
@@ -142,6 +143,55 @@ async function seed(ws: string) {
   return { a, lead, t, m, att: m.attachments[0]! };
 }
 
+/** A mailbox and a stranger's reply: no lead is linked yet. */
+async function triage(ws: string) {
+  const P = db.prisma;
+  const tag = randomBytes(4).toString("hex");
+  const a = await P.emailAccount.create({
+    data: {
+      workspaceId: ws,
+      provider: "SMTP",
+      email: `triage-${tag}@send.test`,
+      fromName: "Me",
+      firstName: "Me",
+      lastName: "Self",
+      capTier: "SMTP",
+      providerCap: 100,
+    },
+  });
+  const t = await P.thread.create({
+    data: {
+      workspaceId: ws,
+      accountId: a.id,
+      subject: "Hello",
+      lastMessageAt: T,
+      lastInboundAt: T,
+      lastInboundKind: "REPLY",
+      isRead: false,
+    },
+  });
+  await P.message.create({
+    data: {
+      workspaceId: ws,
+      accountId: a.id,
+      threadId: t.id,
+      rfcMessageId: `<triage-${tag}@acme.test>`,
+      references: [],
+      direction: "IN",
+      folder: "INBOX",
+      fromEmail: "dana@acme.test",
+      fromName: "Dana Smith",
+      to: [a.email],
+      cc: [],
+      subject: "Hello",
+      text: "Tell me more",
+      sentAt: T,
+      kind: "REPLY",
+    },
+  });
+  return t;
+}
+
 it("reads for a viewer, writes for members; thread GET never carries attachment data", async () => {
   const s = await seed(workspaceId);
   await setRole("VIEWER");
@@ -177,6 +227,37 @@ it("reads for a viewer, writes for members; thread GET never carries attachment 
   expect(patched.status).toBe(200);
   expect(await json(patched)).toMatchObject({ isRead: true, categorySource: "USER" });
   expect((await r.thread!.PATCH!(req("PATCH", "x", { nope: 1 }), p(s.t.id))).status).toBe(400);
+});
+
+it("create-lead from a triage thread: member session and leads:create for a key", async () => {
+  const first = await triage(workspaceId);
+  await setRole("VIEWER");
+  expect((await r.createLead!.POST!(req("POST", "x"), p(first.id))).status).toBe(403);
+  await setRole("MEMBER");
+  const ok = await r.createLead!.POST!(req("POST", "x"), p(first.id));
+  expect(ok.status).toBe(200);
+  const body = await json(ok);
+  expect(body).toMatchObject({ created: true });
+  expect(await db.prisma.lead.findUniqueOrThrow({ where: { id: body.leadId } })).toMatchObject({
+    email: "dana@acme.test",
+    firstName: "Dana",
+    lastName: "Smith",
+    source: "inbox_triage",
+  });
+
+  const { createApiKey } = await import("@rightnow/core");
+  const bearer = async (name: string, scopes: string[]) => ({
+    authorization: `Bearer ${(await createApiKey(db.prisma, workspaceId, name, scopes)).token}`,
+  });
+  const plain = await triage(workspaceId);
+  const inboxOnly = await bearer("triage-inbox", ["inbox:write"]);
+  const refused = await r.createLead!.POST!(req("POST", "x", undefined, inboxOnly), p(plain.id));
+  expect(refused.status).toBe(403);
+  expect((await json(refused)).error).toBe("scope_required:leads:create");
+  const both = await bearer("triage-both", ["inbox:write", "leads:create"]);
+  expect((await r.createLead!.POST!(req("POST", "x", undefined, both), p(plain.id))).status).toBe(
+    200,
+  );
 });
 
 it("API keys: bulk blocklist and set_interest need the scope of what they change (m13)", async () => {

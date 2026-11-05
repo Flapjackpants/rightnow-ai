@@ -25,8 +25,9 @@ when they differ, `openapi.json` wins.
   views: `inbox:*` or `leads:*`). Some routes also need the scopes of the data they read or write: the AI routes
   (`inbox:read` for thread input, `leads:read` for lead input, `leads:update` for `score`, `crm:create` for `recommend`,
   `campaigns:read` for `draft`, `campaigns:read` and `analytics:read` for `campaign-analysis`), `POST /imports` with a
-  `campaignId` (`campaigns:update`), `POST /inbox/threads/bulk` (`blocklist:create` for `blocklist`, `leads:update` for
-  `set_interest`), the `GET /analytics/activity` CSV (`leads:read`), and webhook create/update (`inbox:read` for reply
+  `campaignId` (`campaigns:update`), `POST /inbox/threads/{id}/create-lead` (`leads:create`),
+  `POST /inbox/threads/bulk` (`blocklist:create` for `blocklist`, `leads:update` for `set_interest`), the
+  `GET /analytics/activity` CSV (`leads:read`), and webhook create/update (`inbox:read` for reply
   events, `leads:read` for lead events).
 - Reads trim what a key may not see instead of refusing. `GET /leads/{id}/export` leaves out `threads` without
   `inbox:read` and notes, tasks and deals without `crm:read`, and names them in `omitted` (e.g.
@@ -319,6 +320,7 @@ An official SDK, a CLI and an MCP server are not provided (PS-AUTO-14); generate
 | PATCH | `/inbox/threads/{id}` | MEMBER | `inbox:write` |
 | DELETE | `/inbox/threads/{id}` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/attach-lead` | MEMBER | `inbox:write` |
+| POST | `/inbox/threads/{id}/create-lead` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/read-all` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/{id}/reply` | MEMBER | `inbox:write` |
 | POST | `/inbox/threads/bulk` | MEMBER | `inbox:write` |

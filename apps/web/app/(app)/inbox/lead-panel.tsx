@@ -12,6 +12,11 @@ import { INTEREST } from "../leads/labels";
 import type { Detail } from "./types";
 
 const day = (iso: string) => new Date(iso).toLocaleDateString();
+const CREATE_LEAD_ERRORS: Record<string, string> = {
+  not_a_person: "This conversation has no sender to add as a lead.",
+  suppressed: "This address opted out or was erased.",
+  lead_attached: "A lead is already linked to this conversation.",
+};
 
 export function LeadPanel({
   d,
@@ -38,15 +43,30 @@ export function LeadPanel({
   }
 
   // PS-INBOX-05: a reply from another address is linked to the lead it belongs to
+  async function attachById(leadId: string, done: string) {
+    const r = await call(`/api/v1/inbox/threads/${d.id}/attach-lead`, "POST", { leadId });
+    if (!r.ok) return onResult("", errorText(r));
+    onResult(done, "");
+    onChanged();
+  }
+
   async function attach() {
     const found = await call(`/api/v1/leads?q=${encodeURIComponent(email.trim())}&take=1`, "GET");
     const id = (found.json.leads as { id: string }[] | undefined)?.[0]?.id;
     if (!id) return onResult("", "No lead matches that address.");
-    const r = await call(`/api/v1/inbox/threads/${d.id}/attach-lead`, "POST", { leadId: id });
-    if (!r.ok) return onResult("", errorText(r));
-    onResult("Lead attached.", "");
+    await attachById(id, "Lead attached.");
+  }
+
+  // one click turns the sender of a triage thread into a lead and attaches it
+  async function createFromSender() {
+    const r = await call(`/api/v1/inbox/threads/${d.id}/create-lead`, "POST");
+    if (!r.ok) return onResult("", CREATE_LEAD_ERRORS[errorText(r)] ?? errorText(r));
+    onResult("Lead created.", "");
     onChanged();
   }
+
+  const nameOf = (l: { firstName: string | null; lastName: string | null; email: string }) =>
+    [l.firstName, l.lastName].filter(Boolean).join(" ") || l.email;
 
   const interest = lead?.interestStatus == null ? null : INTEREST[String(lead.interestStatus)];
   return (
@@ -121,6 +141,14 @@ export function LeadPanel({
           <p className="text-fg-muted">No lead is linked to this conversation.</p>
           {canEdit && (
             <>
+              <Button
+                variant="outline"
+                size="sm"
+                className="self-start"
+                onClick={() => void createFromSender()}
+              >
+                Create lead from sender
+              </Button>
               <Input
                 aria-label="Lead email"
                 placeholder="lead@example.com"
@@ -136,6 +164,25 @@ export function LeadPanel({
               >
                 Attach lead
               </Button>
+              {d.domainLeads.length > 0 && (
+                <div className="flex flex-col gap-1.5">
+                  <h3 className="micro text-fg-subtle">Same company</h3>
+                  <ul className="flex flex-col">
+                    {d.domainLeads.map((l) => (
+                      <li key={l.id}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-auto w-full justify-start px-2 py-1 text-left"
+                          onClick={() => void attachById(l.id, "Lead attached.")}
+                        >
+                          {nameOf(l)}
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </>
           )}
         </div>

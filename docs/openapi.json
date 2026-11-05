@@ -8358,6 +8358,7 @@
               "enum": [
                 "primary",
                 "others",
+                "triage",
                 "unread",
                 "reminders",
                 "sent",
@@ -8721,6 +8722,38 @@
         }
       }
     },
+    "/inbox/threads/{id}/create-lead": {
+      "post": {
+        "security": [
+          {
+            "session": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "x-role": "MEMBER",
+        "x-scope": "inbox:write",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {}
+            }
+          }
+        }
+      }
+    },
     "/inbox/threads/{id}/read-all": {
       "post": {
         "security": [
@@ -8823,6 +8856,7 @@
                         "enum": [
                           "primary",
                           "others",
+                          "triage",
                           "unread",
                           "reminders",
                           "sent",
@@ -9110,6 +9144,7 @@
                             "enum": [
                               "primary",
                               "others",
+                              "triage",
                               "unread",
                               "reminders",
                               "sent",
@@ -9334,6 +9369,7 @@
                             "enum": [
                               "primary",
                               "others",
+                              "triage",
                               "unread",
                               "reminders",
                               "sent",

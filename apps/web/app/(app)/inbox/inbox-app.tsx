@@ -12,7 +12,7 @@ import { ThreadList } from "./thread-list";
 import { ThreadView } from "./thread-view";
 import type { Filter, ThreadRow } from "./types";
 
-const NO_COUNTS = { primary: 0, others: 0, total: 0, remindersDue: 0 };
+const NO_COUNTS = { primary: 0, others: 0, triage: 0, total: 0, remindersDue: 0 };
 
 /**
  * B5.11 three panes: views (224px) | list (360px) | thread. From 1024 they fill the viewport height and scroll on

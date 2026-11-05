@@ -359,8 +359,7 @@ export async function setVerifierSettings(
     !(
       v.apiKey ??
       (old &&
-      new URL(old.url).origin ===
-        new URL(v.kind === "http" ? v.url : MILLIONVERIFIER_URL).origin
+      new URL(old.url).origin === new URL(v.kind === "http" ? v.url : MILLIONVERIFIER_URL).origin
         ? old.apiKey
         : undefined)
     )

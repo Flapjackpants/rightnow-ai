@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, type ChangeEvent, type FormEvent } from "react";
+import { Callout } from "./callout";
 import { SettingRow, SettingsCard } from "./settings-row";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
@@ -113,6 +114,12 @@ export function WorkspaceSettings({
             {...flag("firstEmailTextOnly")}
           />
           <Switch label="Save emails from non-leads" {...flag("storeNonLeadMail")} />
+          {!flags.storeNonLeadMail && (
+            <Callout tone="warning">
+              Replies from unknown addresses are discarded and cannot be recovered, including
+              referrals.
+            </Callout>
+          )}
         </SettingRow>
         <div className="flex items-center justify-end gap-3 border-t border-border pt-4">
           <p role="status" className="mr-auto text-[13px]/[18px]">
