@@ -1,9 +1,9 @@
 # Handoff
 
-**Phase:** 9 — built on `phase-9-pipeline-integrations`; final verification results to follow. Not pushed; `main` not fast-forwarded.
+**Phase:** 9 — built on `phase-9-pipeline-integrations`; verified locally (see Tests). Not pushed; `main` not fast-forwarded.
 **Current task:** Phase 9 documentation is complete. Open items: live checks with real keys for Apollo, MillionVerifier and HubSpot; the push decision. Phase 9 is not merged.
 **Plan:** `docs/IMPLEMENTATION_PLAN.md` rev 3 (approved). Done step plans: `docs/plans/phase-1.md` … `phase-5.md` (+ `phase-4-review.md`, `phase-5-review.md`).
-**Tests:** ~1,900 vitest + Playwright (auth, accounts*, campaign-create, deliverability, inbox, leads, test-send …) green; CI `check`, `compose-smoke`, `imap-real` green. Parity: 311/316 ticked.
+**Tests (Phase 9, 2026-11-05):** `npm test` 2,070 passed, 3 skipped on 3fb1595; lint, typecheck, production build and `E2E_PROD=1 npm run e2e` on 64be281: e2e 91 passed, 6 failed. All 6 also fail on 0b94987 under the same production mode: `a11y.spec.ts:261` (light, dark), `a11y.spec.ts:298` (light), `a11y.spec.ts:350`, `crm.spec.ts:27`, `inbox-thread.spec.ts:40`. CI, `compose-smoke` and `imap-real` have not run on this branch (not pushed). Apollo, MillionVerifier and HubSpot have not been called live.
 
 ## Next exact action
 Complete final verification for Phase 9, then decide whether to push the branch. Live checks with real keys for Apollo, MillionVerifier and HubSpot remain open.
